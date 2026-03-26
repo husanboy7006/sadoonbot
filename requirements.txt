@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+pydantic
+aiogram
+yt-dlp
+ffmpeg-python
+python-multipart
+aiofiles

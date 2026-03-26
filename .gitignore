@@ -1,0 +1,9 @@
+__pycache__/
+temp/
+output/
+venv/
+env/
+.env
+ffmpeg.exe
+ffprobe.exe
+*.log
