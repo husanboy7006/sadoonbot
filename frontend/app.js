@@ -1,6 +1,6 @@
 // DIQQAT: Sayt qachonki Vercel ga yuklanganda, pastdagi manzilni o'zingizning HuggingFace serveringizga o'zgartiring!
 // Misol uchun: const API_URL = "https://husanboy7006-sadoonbot.hf.space/api/mix";
-const API_URL = "http://127.0.0.1:8000/api/mix";
+const API_URL = "https://husanjon007-sadoon-api.hf.space/api/mix";
 
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('image-upload');
@@ -95,7 +95,9 @@ form.addEventListener('submit', async (e) => {
         const data = await response.json();
 
         if (data.status === "success") {
-            const videoUrl = "http://127.0.0.1:8000" + data.download_url;
+            // "api/mix" o'rniga "download/..." ishlatiladi 
+            const baseUrl = API_URL.replace("/api/mix", "");
+            const videoUrl = baseUrl + data.download_url;
             
             // Videoni ko'rsatish va skachat tugmasini boyitish
             resultVideo.src = videoUrl;
