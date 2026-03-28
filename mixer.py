@@ -25,8 +25,12 @@ def download_audio(url: str, output_path: str):
     }
     
     # Kelajakda serverga joylaganda (HuggingFace) cookies.txt kerak bo'ladi:
-    if os.path.exists('cookies.txt'):
-        ydl_opts['cookiefile'] = 'cookies.txt'
+    import os
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    cookie_path = os.path.join(BASE_DIR, 'cookies.txt')
+    
+    if os.path.exists(cookie_path):
+        ydl_opts['cookiefile'] = cookie_path
         ydl_opts.pop('cookiesfrombrowser', None) # Fayl bo'lsa brauzerni chetlab o'tadi
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
