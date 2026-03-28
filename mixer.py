@@ -20,8 +20,15 @@ def download_audio(url: str, output_path: str):
         }],
         'quiet': False,
         'noplaylist': True,
+        # Oson usul (Faqat kompyuteringiz uchun): To'g'ridan-to'g'ri brauzerdan o'qiydi
+        'cookiesfrombrowser': ('chrome',), # Edge ishlatsangiz 'edge', Yandex uchun 'yandex'
     }
     
+    # Kelajakda serverga joylaganda (HuggingFace) cookies.txt kerak bo'ladi:
+    if os.path.exists('cookies.txt'):
+        ydl_opts['cookiefile'] = 'cookies.txt'
+        ydl_opts.pop('cookiesfrombrowser', None) # Fayl bo'lsa brauzerni chetlab o'tadi
+
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([url])
         
