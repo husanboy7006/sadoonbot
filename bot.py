@@ -91,7 +91,7 @@ async def handle_link(message: Message, state: FSMContext):
                         # Telegram serveriga yuklash biroz vaqt olishi mumkin, request_timeout beramiz
                         vid_file = FSInputFile(video_path)
                         try:
-                            await message.answer_video(video=vid_file, caption="Siz so'ragan video! 🎵", request_timeout=300)
+                            await message.answer_video(video=vid_file, caption="Siz so'ragan video! 🎵\n\n🤖 @sadoon_ai_bot orqali yuklandi", request_timeout=300)
                         except Exception as send_err:
                             if "timeout" not in str(send_err).lower():
                                 raise send_err
