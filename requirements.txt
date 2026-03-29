@@ -6,3 +6,4 @@ yt-dlp
 ffmpeg-python
 python-multipart
 aiofiles
+requests

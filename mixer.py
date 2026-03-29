@@ -1,6 +1,7 @@
 import yt_dlp
 import ffmpeg
 import os
+import requests
 
 def download_audio(url: str, output_path: str):
     """
@@ -9,7 +10,41 @@ def download_audio(url: str, output_path: str):
     """
     print(f"[*] Audioni ajratib olish boshlandi: {url}")
     
-    # Agar fayl ext bo'lmasa qõshamiz (yt-dlp ni nastroykasi)
+    # Instagram bo'lsa RapidAPI'ni sinab ko'ramiz
+    if "instagram.com" in url:
+        try:
+            print("[*] Instagram uchun RapidAPI ishlatilmoqda...")
+            api_url = "https://instagram-reels-downloader-api.p.rapidapi.com/download"
+            querystring = {"url": url}
+            headers = {
+                "x-rapidapi-key": "af24a50843msh3494516d7830dcep165fd0jsn5bc86418db95",
+                "x-rapidapi-host": "instagram-reels-downloader-api.p.rapidapi.com"
+            }
+            response = requests.get(api_url, headers=headers, params=querystring)
+            data = response.json()
+            
+            # API dan olingan videodan audioni ajratib olish (yoki audio url bo'lsa o'shani olish)
+            media_url = data.get("url") or data.get("download_url")
+            
+            if media_url:
+                print(f"[+] Media link topildi, yuklash boshlandi...")
+                temp_video = output_path.replace(".mp3", "_temp.mp4")
+                r = requests.get(media_url, stream=True)
+                with open(temp_video, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                
+                # Videodan audioni ajratish (FFmpeg orqali)
+                ffmpeg.input(temp_video).output(output_path, q=0).overwrite_output().run(quiet=True)
+                os.remove(temp_video)
+                print("[+] Audio muvaffaqiyatli tortildi!")
+                return
+            else:
+                print("[-] API dan link olinmadi, yt-dlp ga o'tyapmiz...")
+        except Exception as e:
+            print(f"[-] RapidAPI xatosi: {e}, yt-dlp ga o'tyapmiz...")
+
+    # yt-dlp fallback (yoki Instagram bo'lmasa)
     ydl_opts = {
         'format': 'bestaudio/best',
         'outtmpl': output_path.replace('.mp3', '') + '.%(ext)s',
@@ -20,18 +55,16 @@ def download_audio(url: str, output_path: str):
         }],
         'quiet': False,
         'noplaylist': True,
-        # Oson usul (Faqat kompyuteringiz uchun): To'g'ridan-to'g'ri brauzerdan o'qiydi
-        'cookiesfrombrowser': ('chrome',), # Edge ishlatsangiz 'edge', Yandex uchun 'yandex'
+        # Oson usul (Faqat kompyuteringiz uchun)
+        'cookiesfrombrowser': ('chrome',), 
     }
     
-    # Kelajakda serverga joylaganda (HuggingFace) cookies.txt kerak bo'ladi:
-    import os
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     cookie_path = os.path.join(BASE_DIR, 'cookies.txt')
     
     if os.path.exists(cookie_path):
         ydl_opts['cookiefile'] = cookie_path
-        ydl_opts.pop('cookiesfrombrowser', None) # Fayl bo'lsa brauzerni chetlab o'tadi
+        ydl_opts.pop('cookiesfrombrowser', None)
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([url])
