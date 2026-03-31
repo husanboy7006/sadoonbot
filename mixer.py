@@ -17,25 +17,45 @@ else:
     ffmpeg_binary = "ffmpeg"
 
 def get_instagram_stream(url: str, type_required: str = "video"):
-    """Instagram uchun qo'shaloq (Dual) API tizimi - Ildizi bilan muammoni yechish uchun"""
-    headers = {"x-rapidapi-key": "af24a50843msh3494516d7830dcep165fd0jsn5bc86418db95"}
+    """Instagram uchun Triple (Uchtalik) chuchvarasi - Ssilkani tozalash va Cobalt fallback bilan"""
     
-    # 1-yo'l: Social Downloader (Yangi API)
+    # 0. Ssilkani tozalaymiz (Keraksiz parametrlardan qutulish)
+    if "?" in url:
+        url = url.split("?")[0]
+        if not url.endswith("/"): url += "/"
+        
+    headers = {"x-rapidapi-key": "af24a50843msh3494516d7830dcep165fd0jsn5bc86418db95"}
+    last_error = "Noma'lum xatolik"
+    
+    # 1. Cobalt (Ochiq va bepul xizmat) - Yangi qo'shildi
     try:
-        print(f"[*] 1-API ishlatilmoqda: {url}")
+        cobalt_url = "https://cobalt.api.unscrobbler.com/api/json"
+        body = {
+            "url": url,
+            "vQuality": "720",
+            "isAudioOnly": True if type_required == "audio" else False,
+            "vCodec": "h264"
+        }
+        res = requests.post(cobalt_url, headers={"Accept": "application/json", "Content-Type": "application/json"}, json=body, timeout=10)
+        data = res.json()
+        if data.get("url"): return data["url"]
+    except Exception as e:
+        print(f"[-] Cobalt Error: {e}")
+
+    # 2. Social Downloader (RapidAPI)
+    try:
         host1 = "social-downloader.p.rapidapi.com"
-        res = requests.get(f"https://{host1}/api/instagram/video", headers={**headers, "x-rapidapi-host": host1}, params={"url": url}, timeout=15)
+        res = requests.get(f"https://{host1}/api/instagram/video", headers={**headers, "x-rapidapi-host": host1}, params={"url": url}, timeout=10)
         data = res.json()
         link = data.get("data", {}).get("video_url") or data.get("data", {}).get("media_url")
         if link: return link
     except Exception as e:
-        print(f"[-] 1-API xatosi: {e}")
+        print(f"[-] API 1 Error: {e}")
 
-    # 2-yo'l: Instagram Reels Downloader (Eski/Zaxira API)
+    # 3. Instagram Reels Downloader (RapidAPI)
     try:
-        print(f"[*] 2-API ishlatilmoqda: {url}")
         host2 = "instagram-reels-downloader-api.p.rapidapi.com"
-        res = requests.get(f"https://{host2}/download", headers={**headers, "x-rapidapi-host": host2}, params={"url": url}, timeout=15)
+        res = requests.get(f"https://{host2}/download", headers={**headers, "x-rapidapi-host": host2}, params={"url": url}, timeout=10)
         data = res.json()
         medias = data.get("data", {}).get("medias", [])
         for m in medias:
@@ -43,16 +63,17 @@ def get_instagram_stream(url: str, type_required: str = "video"):
             if type_required == "audio" and (m.get("type") == "audio" or m.get("is_audio")): return m.get("url")
         if medias: return medias[0].get("url")
     except Exception as e:
-        print(f"[-] 2-API xatosi: {e}")
+        last_error = f"API 2: {str(e)}"
 
-    return None
+    return last_error
 
 def download_audio(url: str, output_path: str):
     """Audioni tortib oladi (Instagram uchun faqat API)"""
     if "instagram.com" in url:
         media_url = get_instagram_stream(url, type_required="audio")
-        if not media_url:
-            raise Exception("Instagram ssilkasini o'qib bo'lmadi (API limit yoki xato)")
+        if not media_url or not isinstance(media_url, str) or not media_url.startswith("http"):
+            err = media_url if isinstance(media_url, str) else "Noma'lum"
+            raise Exception(f"Instagram ssilkasi o'qilmadi. Sababi: {err}")
         
         temp_v = f"{output_path}_temp.mp4"
         r = requests.get(media_url, stream=True, timeout=30)
@@ -72,8 +93,9 @@ def download_video(url: str, output_path: str):
     """Videoni yuklab oladi (Instagram uchun faqat API)"""
     if "instagram.com" in url:
         media_url = get_instagram_stream(url, type_required="video")
-        if not media_url:
-            raise Exception("Instagram videoni o'qib bo'lmadi (API limit yoki xato)")
+        if not media_url or not isinstance(media_url, str) or not media_url.startswith("http"):
+            err = media_url if isinstance(media_url, str) else "Noma'lum"
+            raise Exception(f"Instagram video o'qilmadi. Sababi: {err}")
         
         r = requests.get(media_url, stream=True, timeout=60)
         with open(output_path, 'wb') as f:
