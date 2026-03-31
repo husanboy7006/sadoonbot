@@ -25,7 +25,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // ---------------------------------------------------------
     // KERAKLI ELEMENTLAR
     // ---------------------------------------------------------
-    const API_BASE = 'http://127.0.0.1:8000/api';
+    const API_BASE = 'https://husanjon007-sadoon-api.hf.space/api';
+    const PROD_BASE = 'https://husanjon007-sadoon-api.hf.space';
     const loader = document.getElementById('loader');
     const resultArea = document.getElementById('resultArea');
     const videoResult = document.getElementById('videoResult');
@@ -117,7 +118,7 @@ document.addEventListener('DOMContentLoaded', () => {
         resultArea.classList.remove('hidden');
         videoResult.classList.remove('hidden');
         shazamResult.classList.add('hidden');
-        const fullUrl = `http://127.0.0.1:8000${downloadUrl}`;
+        const fullUrl = `${PROD_BASE}${downloadUrl}`;
         outputVideo.src = fullUrl;
         downloadBtn.href = fullUrl;
     }

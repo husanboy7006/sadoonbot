@@ -8,8 +8,8 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from mixer import download_audio, mix_image_audio, identify_music, download_video
 
-TOKEN = "8307406554:AAFEcX5fMIiSeKCecfMCAOz55kpm_iw-mNQ" 
-API_URL = os.getenv("API_URL", "http://127.0.0.1:8000/api/mix")
+TOKEN = "8727075082:AAEQrVaA_S-D6wHy1URANE2NgLVMs5d7yXw" 
+API_URL = os.getenv("API_URL", "http://127.0.0.1:7860/api/mix")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()

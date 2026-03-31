@@ -5,10 +5,16 @@ import requests
 from shazamio import Shazam
 from pydub import AudioSegment
 
-# Windowsda FFmpeg ni tanib olishi uchun maxsus ko'rsatma:
+# FFmpeg ni har qanday muhitda (Windows yoki Linux) to'g'ri ishlashi uchun:
 if os.path.exists("ffmpeg.exe"):
+    # Windows: loyal papkadagi ffmpeg.exe ishlatilsin
     os.environ["PATH"] += os.pathsep + os.path.abspath(".")
     AudioSegment.converter = os.path.abspath("ffmpeg.exe")
+    ffmpeg_binary = os.path.abspath("ffmpeg.exe")
+else:
+    # Linux (Server): tizimning tubidagi ffmpeg ishlatilsin
+    AudioSegment.converter = "ffmpeg"
+    ffmpeg_binary = "ffmpeg"
 
 def download_audio(url: str, output_path: str):
     """
