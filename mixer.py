@@ -17,42 +17,50 @@ else:
     ffmpeg_binary = "ffmpeg"
 
 def get_instagram_stream(url: str, type_required: str = "video"):
-    """Instagram uchun Triple (Uchtalik) chuchvarasi - Ssilkani tozalash va Cobalt fallback bilan"""
+    """Instagram uchun 4 bosqichli barqarorlashtirish tizimi"""
     
-    # 0. Ssilkani tozalaymiz (Keraksiz parametrlardan qutulish)
+    # 0. Ssilkani tozalash
     if "?" in url:
         url = url.split("?")[0]
-        if not url.endswith("/"): url += "/"
+    if not url.endswith("/"): url += "/"
         
     headers = {"x-rapidapi-key": "af24a50843msh3494516d7830dcep165fd0jsn5bc86418db95"}
-    last_error = "Noma'lum xatolik"
+    errors = []
     
-    # 1. Cobalt (Ochiq va bepul xizmat) - Yangi qo'shildi
+    # 1. Cobalt (unscrobbler)
     try:
-        cobalt_url = "https://cobalt.api.unscrobbler.com/api/json"
-        body = {
-            "url": url,
-            "vQuality": "720",
-            "isAudioOnly": True if type_required == "audio" else False,
-            "vCodec": "h264"
-        }
-        res = requests.post(cobalt_url, headers={"Accept": "application/json", "Content-Type": "application/json"}, json=body, timeout=10)
+        cobalt_1 = "https://cobalt.api.unscrobbler.com/api/json"
+        res = requests.post(cobalt_1, headers={"Accept": "application/json", "Content-Type": "application/json"}, 
+                            json={"url": url, "isAudioOnly": True if type_required == "audio" else False}, timeout=8)
         data = res.json()
         if data.get("url"): return data["url"]
+        errors.append(f"Cobalt-1: {data.get('message', 'Nomalum')}")
     except Exception as e:
-        print(f"[-] Cobalt Error: {e}")
+        errors.append(f"Cobalt-1: {str(e)}")
 
-    # 2. Social Downloader (RapidAPI)
+    # 2. Cobalt (rest instance)
+    try:
+        cobalt_2 = "https://api.cobalt.tools/api/json"
+        res = requests.post(cobalt_2, headers={"Accept": "application/json", "Content-Type": "application/json"}, 
+                            json={"url": url, "isAudioOnly": True if type_required == "audio" else False}, timeout=8)
+        data = res.json()
+        if data.get("url"): return data["url"]
+        errors.append(f"Cobalt-2: {data.get('message', 'Nomalum')}")
+    except Exception as e:
+        errors.append(f"Cobalt-2: {str(e)}")
+
+    # 3. API 1 (social-downloader)
     try:
         host1 = "social-downloader.p.rapidapi.com"
         res = requests.get(f"https://{host1}/api/instagram/video", headers={**headers, "x-rapidapi-host": host1}, params={"url": url}, timeout=10)
         data = res.json()
         link = data.get("data", {}).get("video_url") or data.get("data", {}).get("media_url")
         if link: return link
+        errors.append(f"Rapid-1: {data.get('message', 'Maalumot yoq')}")
     except Exception as e:
-        print(f"[-] API 1 Error: {e}")
+        errors.append(f"Rapid-1: {str(e)}")
 
-    # 3. Instagram Reels Downloader (RapidAPI)
+    # 4. API 2 (instagram-reels-downloader-api)
     try:
         host2 = "instagram-reels-downloader-api.p.rapidapi.com"
         res = requests.get(f"https://{host2}/download", headers={**headers, "x-rapidapi-host": host2}, params={"url": url}, timeout=10)
@@ -61,11 +69,11 @@ def get_instagram_stream(url: str, type_required: str = "video"):
         for m in medias:
             if type_required == "video" and m.get("type") == "video": return m.get("url")
             if type_required == "audio" and (m.get("type") == "audio" or m.get("is_audio")): return m.get("url")
-        if medias: return medias[0].get("url")
+        errors.append(f"Rapid-2: {data.get('message', 'Topilmadi')}")
     except Exception as e:
-        last_error = f"API 2: {str(e)}"
+        errors.append(f"Rapid-2: {str(e)}")
 
-    return last_error
+    return " | ".join(errors)
 
 def download_audio(url: str, output_path: str):
     """Audioni tortib oladi (Instagram uchun faqat API)"""
