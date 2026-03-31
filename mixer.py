@@ -71,6 +71,30 @@ def download_video(url: str, output_path: str):
     """
     Ssilkadagi videoni o'zini yuklab oladi.
     """
+    # Instagram uchun RapidAPI
+    if "instagram.com" in url:
+        try:
+            print("[*] Instagram Video uchun RapidAPI ishlatilmoqda...")
+            api_url = "https://instagram-reels-downloader-api.p.rapidapi.com/download"
+            headers = {
+                "x-rapidapi-key": "af24a50843msh3494516d7830dcep165fd0jsn5bc86418db95",
+                "x-rapidapi-host": "instagram-reels-downloader-api.p.rapidapi.com"
+            }
+            response = requests.get(api_url, headers=headers, params={"url": url})
+            data = response.json()
+            media_url = data.get("url") or data.get("download_url")
+            
+            if media_url:
+                r = requests.get(media_url, stream=True)
+                with open(output_path, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                print(f"[+] Video RapidAPI orqali yuklab olindi: {output_path}")
+                return
+        except Exception as e:
+            print(f"[-] RapidAPI xatosi: {e}, fallback ga o'tamiz...")
+
+    # yt-dlp fallback
     ydl_opts = {
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'outtmpl': output_path,
@@ -79,7 +103,7 @@ def download_video(url: str, output_path: str):
         'ffmpeg_location': '.', 
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        print(f"[*] Video yuklash boshlandi: {url}")
+        print(f"[*] Video yuklash boshlandi (yt-dlp): {url}")
         ydl.download([url])
     print(f"[+] Video yuklab olindi: {output_path}")
 
