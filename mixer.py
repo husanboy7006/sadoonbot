@@ -16,19 +16,31 @@ else:
     AudioSegment.converter = "ffmpeg"
     ffmpeg_binary = "ffmpeg"
 
-def get_instagram_stream(url: str):
-    """Instagram uchun RapidAPI orqali media ssilkasini oladi"""
+def get_instagram_stream(url: str, type_required: str = "video"):
+    """Instagram uchun RapidAPI orqali media ssilkasini oladi (Ishlaydigan API formatida)"""
     try:
-        print(f"[*] Instagram uchun Social Downloader ishlatilmoqda: {url}")
-        api_url = "https://social-downloader.p.rapidapi.com/api/instagram/video"
+        print(f"[*] Instagram uchun RapidAPI ishlatilmoqda: {url}")
+        api_url = "https://instagram-reels-downloader-api.p.rapidapi.com/download"
         headers = {
             "x-rapidapi-key": "af24a50843msh3494516d7830dcep165fd0jsn5bc86418db95",
-            "x-rapidapi-host": "social-downloader.p.rapidapi.com"
+            "x-rapidapi-host": "instagram-reels-downloader-api.p.rapidapi.com"
         }
         res = requests.get(api_url, headers=headers, params={"url": url})
         data = res.json()
-        # API dan kelgan video/media linkini olamiz
-        return data.get("data", {}).get("video_url") or data.get("data", {}).get("media_url")
+        
+        if not data.get("success") or "data" not in data:
+            return None
+            
+        medias = data["data"].get("medias", [])
+        for m in medias:
+            # So'ralgan tipga qarab linkni qaytaramiz (video yoki audio)
+            if type_required == "video" and m.get("type") == "video":
+                return m.get("url")
+            if type_required == "audio" and (m.get("type") == "audio" or m.get("is_audio")):
+                return m.get("url")
+        
+        # Agar so'ralgan topilmasa, borini qaytaramiz
+        return medias[0].get("url") if medias else None
     except Exception as e:
         print(f"[-] RapidAPI Error: {e}")
         return None
@@ -39,10 +51,9 @@ def download_audio(url: str, output_path: str):
     """
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"}
     if "instagram.com" in url:
-        media_url = get_instagram_stream(url)
+        media_url = get_instagram_stream(url, type_required="audio")
         if media_url:
             try:
-                # Videoni vaqtincha yuklab, audiosini ajratamiz
                 temp_v = f"{output_path}_temp.mp4"
                 r = requests.get(media_url, stream=True, headers=headers)
                 with open(temp_v, 'wb') as f:
@@ -79,7 +90,7 @@ def download_video(url: str, output_path: str):
     """
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"}
     if "instagram.com" in url:
-        media_url = get_instagram_stream(url)
+        media_url = get_instagram_stream(url, type_required="video")
         if media_url:
             try:
                 r = requests.get(media_url, stream=True, headers=headers)
