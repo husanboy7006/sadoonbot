@@ -7,6 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from mixer import download_audio, mix_image_audio, identify_music, download_video
+import database as db
 
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.default import DefaultBotProperties
@@ -41,14 +42,31 @@ main_keyboard = InlineKeyboardMarkup(inline_keyboard=[
     ]
 ])
 
+ADMIN_ID = 64029744917  # Bu yerga O'z IDingizni yozing (masalan: 123456789)
+
 @dp.message(CommandStart())
 async def command_start_handler(message: Message, state: FSMContext) -> None:
+    # Foydalanuvchini bazaga qo'shish
+    db.add_user(message.from_user.id, message.from_user.username)
+    
     await message.answer(
         "👋 Salom! Men **Sadoon** botiman 🎥\n\nNima qilmoqchimiz? Tanlang:",
         reply_markup=main_keyboard,
         parse_mode="Markdown"
     )
     await state.clear()
+
+@dp.message(F.text == "/admin")
+async def admin_stats_handler(message: Message):
+    if message.from_user.id == ADMIN_ID:
+        report = db.get_stats_report()
+        await message.answer(report, parse_mode="Markdown")
+    else:
+        await message.answer("❌ Bu buyruq faqat Admin uchun!")
+
+@dp.message(F.text == "/my_id")
+async def my_id_handler(message: Message):
+    await message.answer(f"Sizning ID: `{message.from_user.id}`", parse_mode="Markdown")
 
 @dp.callback_query(F.data == "mix_choice")
 async def mix_choice_btn(callback: CallbackQuery, state: FSMContext):
@@ -87,6 +105,8 @@ async def handle_mix_link(message: Message, state: FSMContext):
         os.makedirs("temp", exist_ok=True)
         photo_path = f"temp/{message.from_user.id}_p.jpg"
         await bot.download(photo_id, destination=photo_path)
+        # Statistika yozamiz
+        db.log_stats(message.from_user.id, "mix")
         
         form_data = aiohttp.FormData()
         form_data.add_field('url', url)
@@ -121,6 +141,8 @@ async def handle_download_direct(message: Message, state: FSMContext):
         os.makedirs("temp", exist_ok=True)
         video_path = f"temp/{message.from_user.id}_d.mp4"
         download_video(url, video_path)
+        # Statistika yozamiz
+        db.log_stats(message.from_user.id, "download")
         if os.path.exists(video_path):
             await message.answer_video(video=FSInputFile(video_path), caption="Mana video! 📥")
             os.remove(video_path)
@@ -147,6 +169,8 @@ async def handle_shazam_direct(message: Message, state: FSMContext):
             await bot.download(file_id, destination=temp_path)
         
         track = await identify_music(temp_path)
+        # Statistika yozamiz
+        db.log_stats(message.from_user.id, "shazam")
         if track:
             cap = f"🎵 **{track['title']}**\n👤 {track['subtitle']}\n\n🔗 [Shazam]({track['shazam_url']})"
             if track['image']:
@@ -163,6 +187,8 @@ async def handle_shazam_direct(message: Message, state: FSMContext):
     await message.answer("Yana biron nima qilamizmi? 👇", reply_markup=main_keyboard)
 
 async def main():
+    # Bazani tayyorlaymiz
+    db.init_db()
     print("Bot muvaffaqiyatli ishga tushdi...")
     # Kutib qolgan xabarlarni tozalab, botni toza holatda ishga tushiramiz
     await bot.delete_webhook(drop_pending_updates=True)
