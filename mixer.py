@@ -16,107 +16,92 @@ else:
     AudioSegment.converter = "ffmpeg"
     ffmpeg_binary = "ffmpeg"
 
+def find_best_media_in_json(obj, type_required):
+    """JSON ichidan rekurziya orqali eng mos linkni topadi"""
+    candidates = []
+    exts = [".mp3", ".m4a", "audio", "mp3"] if type_required == "audio" else [".mp4", "video", "mp4"]
+    
+    def recurse(d):
+        if isinstance(d, dict):
+            for k, v in d.items():
+                if isinstance(v, (dict, list)): recurse(v)
+                elif isinstance(v, str) and v.startswith("http"):
+                    if any(x in v.lower() for x in exts): candidates.append(v)
+        elif isinstance(d, list):
+            for i in d: recurse(i)
+            
+    recurse(obj)
+    return candidates[0] if candidates else None
+
 def get_instagram_stream(url: str, type_required: str = "video"):
-    """Instagram uchun 12 bosqichli ultra-barqarorlashtirish tizimi"""
+    """Instagram uchun 15 bosqichli mega-barqarorlashtirish tizimi"""
     
     # 0. Ssilkani tozalash
-    if "?" in url:
-        url = url.split("?")[0]
+    if "?" in url: url = url.split("?")[0]
     if not url.endswith("/"): url += "/"
         
     headers = {"x-rapidapi-key": "af24a50843msh3494516d7830dcep165fd0jsn5bc86418db95"}
     errors = []
     
-    # 1. COBALT INSTANCES (Eng tez)
-    cobalt_instances = [
-        "https://api.cobalt.tools/api/json",
-        "https://cobalt-api.kwiateusz.xyz/api/json",
-        "https://cobalt.sh/api/json",
-        "https://imput.net/api/json"
+    # 1. COBALT INSTANCES (v10 payload)
+    instances = [
+        "https://api.cobalt.tools/api/json", "https://cobalt-api.kwiateusz.xyz/api/json",
+        "https://cobalt.sh/api/json", "https://imput.net/api/json",
+        "https://api.geronimo.top/api/json", "https://cobalt-api.v0lume.xyz/api/json"
     ]
-    
-    for i, base in enumerate(cobalt_instances, 1):
+    for i, base in enumerate(instances, 1):
         try:
-            payload = {
-                "url": url,
-                "downloadMode": "audio" if type_required == "audio" else "video",
-                "isAudioOnly": True if type_required == "audio" else False,
-                "videoQuality": "720"
-            }
             res = requests.post(base, headers={"Accept": "application/json", "Content-Type": "application/json"}, 
-                                json=payload, timeout=7)
+                                json={"url": url, "downloadMode": "audio" if type_required == "audio" else "video", "videoQuality": "720"}, timeout=6)
             if res.status_code == 200:
-                data = res.json()
-                if data.get("url"): return data["url"]
+                d = res.json()
+                if d.get("url"): return d["url"]
         except: pass
 
-    # 2. RAPIDAPI INSTANCES
-    rapid_providers = [
-        {"host": "instagram-reels-downloader-api.p.rapidapi.com", "endpoint": "/download", "params": {"url": url}},
-        {"host": "instagram-downloader-v2.p.rapidapi.com", "endpoint": "/index", "params": {"url": url}},
-        {"host": "instagram-downloader-download-instagram-videos-stories.p.rapidapi.com", "endpoint": "/index", "params": {"url": url}},
-        {"host": "instagram-downloader2.p.rapidapi.com", "endpoint": "/index", "params": {"url": url}},
-        {"host": "social-downloader.p.rapidapi.com", "endpoint": "/api/instagram/video", "params": {"url": url}},
-        {"host": "instagram-bulk-scraper-latest.p.rapidapi.com", "endpoint": "/media_download_url", "params": {"url": url}},
-        {"host": "instagram-data12.p.rapidapi.com", "endpoint": "/media/info", "params": {"url": url}}
+    # 2. RAPIDAPI (Power search bilan)
+    rapid_hosts = [
+        "instagram-reels-downloader-api.p.rapidapi.com",
+        "instagram-downloader-v2.p.rapidapi.com",
+        "instagram-downloader-download-instagram-videos-stories.p.rapidapi.com",
+        "instagram-media-downloader.p.rapidapi.com",
+        "social-downloader.p.rapidapi.com",
+        "instagram-bulk-scraper-latest.p.rapidapi.com",
+        "instagram-data12.p.rapidapi.com"
     ]
-
-    for i, prov in enumerate(rapid_providers, 1):
+    
+    for i, host in enumerate(rapid_hosts, 1):
         try:
-            h = {**headers, "x-rapidapi-host": prov["host"]}
-            res = requests.get(f"https://{prov['host']}{prov['endpoint']}", headers=h, params=prov["params"], timeout=10)
-            if res.status_code != 200:
-                errors.append(f"Rapid-{i}:{res.status_code}")
-                continue
-                
-            data = res.json()
-            link = None
+            params = {"url": url}
+            endpoint = "/download" if "reels" in host else ("/index" if "downloader" in host else "/media/info")
+            if "bulk" in host: endpoint = "/media_download_url"
             
-            # --- Robust Link Extraction ---
-            if "reels-downloader" in prov["host"]:
-                medias = data.get("data", {}).get("medias", [])
-                for m in medias:
-                    curr_url = m.get("url") or m.get("media") or m.get("media_url")
-                    if type_required == "video":
-                        if m.get("type") == "video" or m.get("is_video") or "mp4" in str(curr_url): link = curr_url
-                    else:
-                        if m.get("type") == "audio" or m.get("is_audio") or "mp3" in str(curr_url): link = curr_url
-                if not link and medias: link = medias[0].get("url") # Fallback
-            
-            elif "bulk-scraper" in prov["host"]:
-                link = data.get("data")
-            
-            elif "social-downloader" in prov["host"]:
-                link = data.get("data", {}).get("video_url") or data.get("data", {}).get("media_url")
-            
-            else:
-                # Umumiy qidiruv
+            res = requests.get(f"https://{host}{endpoint}", headers={**headers, "x-rapidapi-host": host}, params=params, timeout=10)
+            if res.status_code == 200:
+                data = res.json()
+                # 2.1 Ma'lum bir kalitlarni tekshirish
                 link = data.get("media") or data.get("url") or data.get("download_url") or data.get("video_url")
-                if not link and "data" in data:
-                    if isinstance(data["data"], str): link = data["data"]
-                    elif isinstance(data["data"], dict):
-                        link = data["data"].get("url") or data["data"].get("video_url") or data["data"].get("media")
-            
-            if link and isinstance(link, str) and link.startswith("http"): return link
-            errors.append(f"Rapid-{i}:NoLink")
+                if not link: # 2.2 Deep recursion search
+                    link = find_best_media_in_json(data, type_required)
+                
+                if link and isinstance(link, str) and link.startswith("http"): return link
+            errors.append(f"R{i}:{res.status_code}")
         except:
-            errors.append(f"Rapid-{i}:Err")
+            errors.append(f"R{i}:Err")
 
-    # 3. FINAL FALLBACK: YT-DLP
+    # 3. YT-DLP FALLBACK (Oxirgi chora)
     try:
+        # Eng oxirgi linkni olishga harakat qilamiz
         ydl_opts = {
             'quiet': True, 'no_warnings': True,
             'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
-            'format': 'bestaudio/best' if type_required == 'audio' else 'bestvideo+bestaudio/best',
-            'get_url': True
+            'format': 'best', 'get_url': True
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Ba'zan extract_info sekin ishlaydi, shuning uchun timeout qo'sholmaymiz lekin extractionni catch qilamiz
             info = ydl.extract_info(url, download=False)
             if info.get('url'): return info['url']
             if info.get('entries'): return info['entries'][0].get('url')
     except Exception as e:
-        errors.append(f"yt-dlp:{str(e)[:15]}")
+        errors.append(f"ytd:{str(e)[:15]}")
 
     return " | ".join(errors)
 
