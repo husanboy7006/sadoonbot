@@ -1,7 +1,7 @@
 fastapi
 uvicorn
 pydantic
-aiogram
+aiogram>=3.4.1
 yt-dlp
 ffmpeg-python
 python-multipart

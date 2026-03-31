@@ -8,10 +8,22 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from mixer import download_audio, mix_image_audio, identify_music, download_video
 
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.default import DefaultBotProperties
+
 TOKEN = "8727075082:AAEQrVaA_S-D6wHy1URANE2NgLVMs5d7yXw" 
 API_URL = os.getenv("API_URL", "http://127.0.0.1:7860/api/mix")
 
-bot = Bot(token=TOKEN)
+# Cloud muhiti uchun session va timeout ni moslaymiz
+session = AiohttpSession(
+    timeout=60,  # 60 sekund timeout
+)
+
+bot = Bot(
+    token=TOKEN, 
+    session=session,
+    default=DefaultBotProperties(parse_mode='Markdown')
+)
 dp = Dispatcher()
 
 class MixState(StatesGroup):
@@ -152,6 +164,8 @@ async def handle_shazam_direct(message: Message, state: FSMContext):
 
 async def main():
     print("Bot muvaffaqiyatli ishga tushdi...")
+    # Kutib qolgan xabarlarni tozalab, botni toza holatda ishga tushiramiz
+    await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
