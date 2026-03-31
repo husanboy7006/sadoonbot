@@ -37,17 +37,18 @@ def download_audio(url: str, output_path: str):
     """
     Ssilkadan audioni mp3 formatida tortib oladi.
     """
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"}
     if "instagram.com" in url:
         media_url = get_instagram_stream(url)
         if media_url:
             try:
                 # Videoni vaqtincha yuklab, audiosini ajratamiz
                 temp_v = f"{output_path}_temp.mp4"
-                r = requests.get(media_url, stream=True)
+                r = requests.get(media_url, stream=True, headers=headers)
                 with open(temp_v, 'wb') as f:
                     for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
                 
-                ffmpeg.input(temp_v).output(output_path, acodec='libmp3lame', ab='192k').overwrite_output().run(quiet=True)
+                ffmpeg.input(temp_v).output(output_path, acodec='libmp3lame', ab='192k').overwrite_output().run(quiet=True, cmd=ffmpeg_binary)
                 if os.path.exists(temp_v): os.remove(temp_v)
                 print(f"[+] Audio RapidAPI orqali olindi: {output_path}")
                 return
@@ -76,11 +77,12 @@ def download_video(url: str, output_path: str):
     """
     Ssilkadagi videoni o'zini yuklab oladi.
     """
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"}
     if "instagram.com" in url:
         media_url = get_instagram_stream(url)
         if media_url:
             try:
-                r = requests.get(media_url, stream=True)
+                r = requests.get(media_url, stream=True, headers=headers)
                 with open(output_path, 'wb') as f:
                     for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
                 print(f"[+] Video RapidAPI orqali yuklab olindi: {output_path}")
@@ -111,9 +113,9 @@ def mix_image_audio(image_path: str, audio_path: str, output_path: str):
     
     (
         ffmpeg
-        .output(input_image, input_audio, output_path, vcodec='libx264', acodec='aac', shortest=None, pix_fmt='yuv420p', r=30)
+        .output(input_image, input_audio, output_path, vcodec='libx264', acodec='aac', shortest=None, pix_fmt='yuv420p', r=30, preset='ultrafast')
         .overwrite_output()
-        .run(quiet=True)
+        .run(quiet=True, cmd=ffmpeg_binary)
     )
     print(f"[+] Video tayyor: {output_path}")
 
