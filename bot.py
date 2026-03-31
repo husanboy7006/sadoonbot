@@ -5,117 +5,153 @@ from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message, FSInputFile
+from aiogram.types import Message, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from mixer import download_audio, mix_image_audio, identify_music, download_video
 
-# ⚠️ MUHIM: Bu yerga BotFather'dan olingan bot TOKEN ni yozing!
-TOKEN = "8727075082:AAEQrVaA_S-D6wHy1URANE2NgLVMs5d7yXw" 
-# Bizning FastAPI Markaziy Dvigatel manzilimiz
-# Agar Docker ishlatsak, u os.getenv orqali "http://api:8000/api/mix" bo'lini o'qib oladi.
+TOKEN = "8307406554:AAFEcX5fMIiSeKCecfMCAOz55kpm_iw-mNQ" 
 API_URL = os.getenv("API_URL", "http://127.0.0.1:8000/api/mix")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# Bot foydalanuvchilarining qaysi bosqichdaligini kuzatib turadigan Holatlar
 class MixState(StatesGroup):
     waiting_for_photo = State()
     waiting_for_link = State()
+    waiting_for_downloader = State()
+    waiting_for_shazam = State()
+
+# Asosiy tugmalar (Menu)
+main_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="🎬 Video yasash", callback_data="mix_choice")],
+    [
+        InlineKeyboardButton(text="🔍 Musiqani topish", callback_data="shazam_choice"),
+        InlineKeyboardButton(text="📥 Videoni yuklash", callback_data="down_choice")
+    ]
+])
 
 @dp.message(CommandStart())
 async def command_start_handler(message: Message, state: FSMContext) -> None:
     await message.answer(
-        "👋 Salom! Men **Sadoon** botiman 🎥\n\n"
-        "Menga o'zingizning biron rasmingizni yuboring, keyin esa Instagram (audio bor bo'lgan) ssilkasini bering."
-        " Men audioni orqa fonga qo'yib uni tayyor videoga aylantiraman!\n\n"
-        "📸 _Qani, birinchi menga rasm yuboring:_ ",
+        "👋 Salom! Men **Sadoon** botiman 🎥\n\nNima qilmoqchimiz? Tanlang:",
+        reply_markup=main_keyboard,
         parse_mode="Markdown"
     )
+    await state.clear()
+
+@dp.callback_query(F.data == "mix_choice")
+async def mix_choice_btn(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await callback.message.answer("📸 Juda yaxshi! Unda birinchi **rasm** yuboring:")
     await state.set_state(MixState.waiting_for_photo)
+
+@dp.callback_query(F.data == "down_choice")
+async def down_choice_btn(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await callback.message.answer("🔗 Menga Instagram (Reels) linkini yuboring, uni yuklab beraman:")
+    await state.set_state(MixState.waiting_for_downloader)
+
+@dp.callback_query(F.data == "shazam_choice")
+async def shazam_choice_btn(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await callback.message.answer("🔍 Menga audio/video fayl yoki Instagram linkini yuboring, musiqasini topaman:")
+    await state.set_state(MixState.waiting_for_shazam)
 
 @dp.message(MixState.waiting_for_photo, F.photo)
 async def handle_photo(message: Message, state: FSMContext):
-    # Yuborilgan rasmlar ichidan eng yuqori sifatlisini (oxirgisini) tanlab id sini olamiz
     photo_id = message.photo[-1].file_id
-    
-    # Rasm ID sini eslab qolib, keyingi API so'rovi uchun saqlaymiz
     await state.update_data(photo_id=photo_id)
-    
-    await message.answer("✅ Rasm ajoyib!\n\n🔗 Endi menga Instagram (Reels) yoki boshqa shunga o'xshash audiosi bor video havolasini yuboring:")
+    await message.answer("✅ Rasm ajoyib!\n\n🔗 Endi menga audiosi bor video havolasini (link) yuboring:")
     await state.set_state(MixState.waiting_for_link)
 
-@dp.message(MixState.waiting_for_link, F.text)
-async def handle_link(message: Message, state: FSMContext):
+@dp.message(MixState.waiting_for_link, F.text.contains("http"))
+async def handle_mix_link(message: Message, state: FSMContext):
     url = message.text
-    if "http" not in url:
-        await message.answer("⚠️ Iltimos, to'g'ri havolani (ssilka - http...) yuboring:")
-        return
-
-    # Eslab qolinggan rasmni tortamiz
     data = await state.get_data()
     photo_id = data.get("photo_id")
-    
-    # Jarayon davomida foydalanuvchi yana xabar yubormasligi uchun holatni darhol tozalaymiz
     await state.clear()
     
-    wait_msg = await message.answer("⏳ Video tayyorlanmoqda. Iltimos, ulanish, yuklash va aylantirishni tugatgunimizcha biroz kutib turing...")
-    
+    wait_msg = await message.answer("⏳ Video tayyorlanmoqda, iltimos kuting...")
     try:
-        # Papka bo'lmasa ochamiz
         os.makedirs("temp", exist_ok=True)
-        photo_path = f"temp/{message.from_user.id}_bot_photo.jpg"
-        
-        # 1. Rasmni Telegram serverlaridan kompyuterimizga vaqtincha saqlab olamiz
+        photo_path = f"temp/{message.from_user.id}_p.jpg"
         await bot.download(photo_id, destination=photo_path)
         
-        # 2. Markaziy API'mizga fayllarni yuborishga tayyorlaymiz
         form_data = aiohttp.FormData()
         form_data.add_field('url', url)
         form_data.add_field('image', open(photo_path, 'rb'), filename='photo.jpg', content_type='image/jpeg')
         
-        # Server javobini kutamiz (API bilan ishlaydi!)
         async with aiohttp.ClientSession() as session:
-            # So'rov yuboramiz va video tayyorlanishi ba'zida 1-2 minut olishi mumkinligi sabab 'timeout' beramiz
             async with session.post(API_URL, data=form_data, timeout=300) as response:
                 result = await response.json()
-                
                 if result.get("status") == "success":
-                    # Video muvaffaqiyatli tayyorlandi, uni foydalanuvchiga uzatamiz
-                    download_url = result.get("download_url")
-                    task_id = download_url.split("/")[-1]
-                    
-                    video_path = f"output/{task_id}_final.mp4"
-                    
+                    video_path = f"output/{result.get('download_url').split('/')[-1]}_final.mp4"
                     if os.path.exists(video_path):
-                        await wait_msg.edit_text("✅ Video ko'rsatuvga tayyor! Jo'natmoqdaman...")
-                        
-                        # Telegram serveriga yuklash biroz vaqt olishi mumkin, request_timeout beramiz
-                        vid_file = FSInputFile(video_path)
-                        try:
-                            await message.answer_video(video=vid_file, caption="Siz so'ragan video! 🎵\n\n🤖 @sadoon_ai_bot orqali yuklandi", request_timeout=300)
-                        except Exception as send_err:
-                            if "timeout" not in str(send_err).lower():
-                                raise send_err
-                        
-                        # Jo'natib bo'lgach diskni quritish (tozalash)
+                        await message.answer_video(video=FSInputFile(video_path), caption="Tayyor! 🎥")
                         os.remove(video_path)
                     else:
-                        await wait_msg.edit_text("❌ Kechirasiz, fayl serverda topilmadi.")
+                        await message.answer("❌ Fayl topilmadi.")
                 else:
-                    await wait_msg.edit_text(f"❌ Xatolik yuz berdi: {result.get('message')}")
-                    
-        # Telegramdan yuklangan oddiy rasmni ham tozalab tashlaymiz
-        if os.path.exists(photo_path):
-            os.remove(photo_path)
-            
-            
+                    await message.answer(f"❌ Xato: {result.get('message')}")
+        os.remove(photo_path)
     except Exception as e:
-        await wait_msg.edit_text(
-            f"❌ API ga ulanishda yoxud kodda xatolik yuz berdi:\n\n{str(e)}\n\n"
-            "Eslatma: **Markaziy API (FastAPI) serverini terminal orqali yoqqaningizga (run qilganingizga) ishonchingiz komilmi?**"
-        )
+        await message.answer(f"❌ Xatolik: {str(e)}")
+    
+    await wait_msg.delete()
+    # Amal tugadi, menuni yana chiqaramiz:
+    await message.answer("Yana biron nima qilamizmi? 👇", reply_markup=main_keyboard)
+
+@dp.message(MixState.waiting_for_downloader, F.text.contains("http"))
+async def handle_download_direct(message: Message, state: FSMContext):
+    url = message.text
+    await state.clear()
+    wait_msg = await message.answer("📥 Video yuklanmoqda...")
+    try:
+        os.makedirs("temp", exist_ok=True)
+        video_path = f"temp/{message.from_user.id}_d.mp4"
+        download_video(url, video_path)
+        if os.path.exists(video_path):
+            await message.answer_video(video=FSInputFile(video_path), caption="Mana video! 📥")
+            os.remove(video_path)
+        else:
+            await message.answer("❌ Yuklab bo'lmadi.")
+    except Exception as e:
+        await message.answer(f"❌ Xato: {str(e)}")
+    
+    await wait_msg.delete()
+    await message.answer("Yana biron nima qilamizmi? 👇", reply_markup=main_keyboard)
+
+@dp.message(MixState.waiting_for_shazam)
+async def handle_shazam_direct(message: Message, state: FSMContext):
+    await state.clear()
+    wait_msg = await message.answer("🔍 Musiqa tahlil qilinmoqda...")
+    try:
+        os.makedirs("temp", exist_ok=True)
+        temp_path = f"temp/{message.from_user.id}_s.mp3"
+        
+        if message.text and "http" in message.text:
+            download_audio(message.text, temp_path)
+        elif message.audio or message.voice or message.video:
+            file_id = message.audio.file_id if message.audio else (message.voice.file_id if message.voice else message.video.file_id)
+            await bot.download(file_id, destination=temp_path)
+        
+        track = await identify_music(temp_path)
+        if track:
+            cap = f"🎵 **{track['title']}**\n👤 {track['subtitle']}\n\n🔗 [Shazam]({track['shazam_url']})"
+            if track['image']:
+                await message.answer_photo(photo=track['image'], caption=cap, parse_mode="Markdown")
+            else:
+                await message.answer(cap, parse_mode="Markdown")
+        else:
+            await message.answer("❌ Topilmadi.")
+        if os.path.exists(temp_path): os.remove(temp_path)
+    except Exception as e:
+        await message.answer(f"❌ Xato: {str(e)}")
+    
+    await wait_msg.delete()
+    await message.answer("Yana biron nima qilamizmi? 👇", reply_markup=main_keyboard)
 
 async def main():
-    print("Bot muvaffaqiyatli ishga tushdi va API bn ulanishni kutmoqda...")
+    print("Bot muvaffaqiyatli ishga tushdi...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":

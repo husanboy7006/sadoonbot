@@ -6,7 +6,7 @@ import os
 import uuid
 import shutil
 import sys
-from mixer import download_audio, mix_image_audio
+from mixer import download_audio, mix_image_audio, identify_music, download_video
 
 # Windows uchun joriy papkada (c:\InstaMixer) joylashgan ffmpeg.exe va ffprobe.exe ni 
 # tizim PATH o'zgaruvchisiga dastur ishga tushayotganda qo'shib qo'yamiz.
@@ -71,12 +71,61 @@ async def mix_audio_video(
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+@app.post("/api/shazam")
+async def shazam_service(
+    url: str = Form(None),           # Instagram linki bo'lishi mumkin
+    file: UploadFile = File(None)    # Yoki audio/video fayl yuklashi mumkin
+):
+    try:
+        task_id = str(uuid.uuid4())
+        temp_path = f"temp/{task_id}_shazam.mp3"
+        
+        if url:
+            download_audio(url, temp_path)
+        elif file:
+            with open(temp_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+        else:
+            return {"status": "error", "message": "Link yoki fayl yuboring!"}
+            
+        track = await identify_music(temp_path)
+        if os.path.exists(temp_path): os.remove(temp_path)
+        
+        if track:
+            return {"status": "success", "track": track}
+        else:
+            return {"status": "error", "message": "Musiqa topilmadi"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.post("/api/download-video")
+async def download_video_service(url: str = Form(...)):
+    try:
+        task_id = str(uuid.uuid4())
+        video_path = f"output/{task_id}_download.mp4"
+        
+        download_video(url, video_path)
+        
+        if os.path.exists(video_path):
+            return {
+                "status": "success", 
+                "download_url": f"/download/{task_id}_download"
+            }
+        return {"status": "error", "message": "Yuklab bo'lmadi"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 @app.get("/download/{task_id}")
 async def get_video(task_id: str):
-    file_path = f"output/{task_id}_final.mp4"
+    # Ikki xildagi fayl nomlarini tekshiramiz
+    path1 = f"output/{task_id}_final.mp4"
+    path2 = f"output/{task_id.replace('_download', '')}_download.mp4"
+    
+    file_path = path1 if os.path.exists(path1) else path2
+    
     if os.path.exists(file_path):
-        return FileResponse(path=file_path, filename=f"instamix_{task_id}.mp4", media_type='video/mp4')
-    return {"error": "Fayl topilmadi yoki yaratishda xato bo'ldi"}
+        return FileResponse(path=file_path, filename=f"sadoon_{task_id}.mp4", media_type='video/mp4')
+    return {"error": "Fayl topilmadi"}
 
 # Serverni ishga tushirish uchun komanda:
 # uvicorn main:app --reload

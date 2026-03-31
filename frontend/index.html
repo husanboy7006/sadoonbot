@@ -1,64 +1,101 @@
 <!DOCTYPE html>
-<html lang="uz">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sadoon - Media Dvigatelingiz</title>
-    <meta name="description" content="Instagram audiosi bilan rasmizni sifatli musiqali videoga aylantiring, va ko'plab audio funksiyalar!">
+    <title>Sadoon - All-in-One Media Platform</title>
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-    <div class="background-effects">
-        <div class="glow-orb orb-1"></div>
-        <div class="glow-orb orb-2"></div>
-    </div>
-    <div class="container glass-panel">
+    <div class="glass-bg"></div>
+    <div class="container">
         <header>
-            <h1>Sado<span class="highlight">on</span></h1>
-            <p>Rasmingiz va sevimli audioingiz bitta videoda!</p>
+            <div class="logo">
+                <i class="fas fa-magic"></i>
+                <h1>SADOON <span>PRO</span></h1>
+            </div>
+            <p class="subtitle">Video Creation • Music Discovery • Fast Download</p>
         </header>
 
-        <form id="mix-form">
-            <div class="form-group mb">
-                <label for="image-upload" class="upload-box glass-card" id="drop-zone">
-                    <div class="upload-content" id="upload-content">
-                        <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
-                        <p class="upload-title">Rasmni yuklang</p>
-                        <p class="upload-desc">yoki ustiga tashlang</p>
-                    </div>
-                    <img id="image-preview" src="" alt="Preview" style="display: none;">
-                    <input type="file" id="image-upload" accept="image/jpeg, image/png, image/webp" required hidden>
-                </label>
+        <!-- Tablar menyusi -->
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="mix"><i class="fas fa-film"></i> Mix</button>
+            <button class="tab-btn" data-tab="shazam"><i class="fas fa-search"></i> Shazam</button>
+            <button class="tab-btn" data-tab="down"><i class="fas fa-download"></i> Downloader</button>
+        </div>
+
+        <main class="card">
+            <!-- 1. Mix Bo'limi -->
+            <div id="mixTab" class="tab-content active">
+                <div class="input-group">
+                    <label for="imageInput" class="upload-label">
+                        <i class="fas fa-image"></i>
+                        <span>Rasm tanlang</span>
+                    </label>
+                    <input type="file" id="imageInput" accept="image/*" hidden>
+                </div>
+                <div class="input-group">
+                    <input type="text" id="mixUrl" placeholder="Instagram Reels linkini kiriting...">
+                </div>
+                <button id="mixBtn" class="primary-btn">Video yasash</button>
             </div>
 
-            <div class="form-group mb">
-                <label for="insta-url" class="input-label">Instagram yoki Audio Havolasi:</label>
-                <div class="input-wrapper">
-                    <svg class="input-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
-                    <input type="url" id="insta-url" class="glass-input" placeholder="https://www.instagram.com/reel/..." required>
+            <!-- 2. Shazam Bo'limi -->
+            <div id="shazamTab" class="tab-content">
+                <div class="input-group">
+                    <label for="shazamFile" class="upload-label">
+                        <i class="fas fa-music"></i>
+                        <span>Audio/Video fayl tanlang</span>
+                    </label>
+                    <input type="file" id="shazamFile" accept="audio/*,video/*" hidden>
+                </div>
+                <p class="or-text">yoki</p>
+                <div class="input-group">
+                    <input type="text" id="shazamUrl" placeholder="Instagram linkini kiriting...">
+                </div>
+                <button id="shazamBtn" class="primary-btn shazam-color">Musiqani topish</button>
+            </div>
+
+            <!-- 3. Downloader Bo'limi -->
+            <div id="downTab" class="tab-content">
+                <div class="input-group">
+                    <input type="text" id="downUrl" placeholder="Video havolasini (Link) kiritish...">
+                </div>
+                <button id="downBtn" class="primary-btn down-color">Videoni yuklash</button>
+            </div>
+
+            <!-- Loader va Natija Area -->
+            <div class="loader-container" id="loader">
+                <div class="loader-circle"></div>
+                <p>Jarayon ketmoqda, iltimos kuting...</p>
+            </div>
+
+            <div id="resultArea" class="result-area hidden">
+                <div id="videoResult" class="hidden">
+                    <h3>Tayyor! 🎉</h3>
+                    <video id="outputVideo" controls></video>
+                    <a id="downloadBtn" class="download-link" href="#" download>Yuklab olish</a>
+                </div>
+                <div id="shazamResult" class="hidden">
+                    <div class="track-card">
+                        <img id="trackImg" src="" alt="Cover">
+                        <div class="track-info">
+                            <h2 id="trackTitle"></h2>
+                            <p id="trackArtist"></p>
+                            <a id="shazamLink" href="#" target="_blank">Shazamda ko'rish</a>
+                        </div>
+                    </div>
                 </div>
             </div>
+        </main>
 
-            <button type="submit" id="submit-btn" class="btn-primary">
-                <span id="btn-text">Videoni Yaratish <svg class="btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg></span>
-                <span class="loader" id="loader" style="display: none;"></span>
-            </button>
-        </form>
-
-        <div id="result-box" class="result-box hidden">
-            <h3>🎉 Tayyor! Olingiz:</h3>
-            <video id="result-video" class="glass-card" controls playsinline></video>
-            <a id="download-btn" class="btn-secondary" download>
-                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> Saqlab olish
-            </a>
-        </div>
-        
-        <div id="error-box" class="error-box hidden">
-            <svg class="error-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-            <p id="error-text">Nimadir xato ketdi...</p>
-        </div>
+        <footer>
+            <p>&copy; 2026 Sadoon media platform <BR> <a href="https://t.me/sadoon_ai_bot" target="_blank">@sadoon_ai_bot</a></p>
+        </footer>
     </div>
-    <script src="app.js"></script>
+
+    <script src="script.js"></script>
 </body>
 </html>
