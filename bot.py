@@ -42,7 +42,7 @@ main_keyboard = InlineKeyboardMarkup(inline_keyboard=[
     ]
 ])
 
-ADMIN_ID = 64029744917  # Bu yerga O'z IDingizni yozing (masalan: 123456789)
+ADMIN_ID = 7110271171  # Haqiqiy Admin ID ulandi
 
 @dp.message(CommandStart())
 async def command_start_handler(message: Message, state: FSMContext) -> None:
