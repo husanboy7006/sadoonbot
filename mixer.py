@@ -16,39 +16,43 @@ else:
     AudioSegment.converter = "ffmpeg"
     ffmpeg_binary = "ffmpeg"
 
+def get_instagram_stream(url: str):
+    """Instagram uchun RapidAPI orqali media ssilkasini oladi"""
+    try:
+        print(f"[*] Instagram uchun Social Downloader ishlatilmoqda: {url}")
+        api_url = "https://social-downloader.p.rapidapi.com/api/instagram/video"
+        headers = {
+            "x-rapidapi-key": "af24a50843msh3494516d7830dcep165fd0jsn5bc86418db95",
+            "x-rapidapi-host": "social-downloader.p.rapidapi.com"
+        }
+        res = requests.get(api_url, headers=headers, params={"url": url})
+        data = res.json()
+        # API dan kelgan video/media linkini olamiz
+        return data.get("data", {}).get("video_url") or data.get("data", {}).get("media_url")
+    except Exception as e:
+        print(f"[-] RapidAPI Error: {e}")
+        return None
+
 def download_audio(url: str, output_path: str):
     """
     Ssilkadan audioni mp3 formatida tortib oladi.
     """
-    print(f"[*] Audioni ajratib olish boshlandi: {url}")
-    
-    # Instagram bo'lsa RapidAPI'ni sinab ko'ramiz
     if "instagram.com" in url:
-        try:
-            print("[*] Instagram uchun RapidAPI ishlatilmoqda...")
-            api_url = "https://instagram-reels-downloader-api.p.rapidapi.com/download"
-            querystring = {"url": url}
-            headers = {
-                "x-rapidapi-key": "af24a50843msh3494516d7830dcep165fd0jsn5bc86418db95",
-                "x-rapidapi-host": "instagram-reels-downloader-api.p.rapidapi.com"
-            }
-            response = requests.get(api_url, headers=headers, params=querystring)
-            data = response.json()
-            media_url = data.get("url") or data.get("download_url")
-            
-            if media_url:
-                temp_video = output_path.replace(".mp3", "_temp.mp4")
+        media_url = get_instagram_stream(url)
+        if media_url:
+            try:
+                # Videoni vaqtincha yuklab, audiosini ajratamiz
+                temp_v = f"{output_path}_temp.mp4"
                 r = requests.get(media_url, stream=True)
-                with open(temp_video, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        f.write(chunk)
+                with open(temp_v, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
                 
-                ffmpeg.input(temp_video).output(output_path, q=0).overwrite_output().run(quiet=True)
-                os.remove(temp_video)
-                print("[+] Audio muvaffaqiyatli tortildi!")
+                ffmpeg.input(temp_v).output(output_path, acodec='libmp3lame', ab='192k').overwrite_output().run(quiet=True)
+                if os.path.exists(temp_v): os.remove(temp_v)
+                print(f"[+] Audio RapidAPI orqali olindi: {output_path}")
                 return
-        except Exception as e:
-            print(f"[-] RapidAPI xatosi: {e}, yt-dlp ga o'tyapmiz...")
+            except Exception as e:
+                print(f"[-] RapidAPI download error: {e}")
 
     # yt-dlp fallback
     ydl_opts = {
@@ -64,6 +68,7 @@ def download_audio(url: str, output_path: str):
         'ffmpeg_location': '.', 
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        print(f"[*] Audioni tortish boshlandi (yt-dlp): {url}")
         ydl.download([url])
     print("[+] Audio muvaffaqiyatli tortildi!")
 
@@ -71,28 +76,17 @@ def download_video(url: str, output_path: str):
     """
     Ssilkadagi videoni o'zini yuklab oladi.
     """
-    # Instagram uchun RapidAPI
     if "instagram.com" in url:
-        try:
-            print("[*] Instagram Video uchun RapidAPI ishlatilmoqda...")
-            api_url = "https://instagram-reels-downloader-api.p.rapidapi.com/download"
-            headers = {
-                "x-rapidapi-key": "af24a50843msh3494516d7830dcep165fd0jsn5bc86418db95",
-                "x-rapidapi-host": "instagram-reels-downloader-api.p.rapidapi.com"
-            }
-            response = requests.get(api_url, headers=headers, params={"url": url})
-            data = response.json()
-            media_url = data.get("url") or data.get("download_url")
-            
-            if media_url:
+        media_url = get_instagram_stream(url)
+        if media_url:
+            try:
                 r = requests.get(media_url, stream=True)
                 with open(output_path, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        f.write(chunk)
+                    for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
                 print(f"[+] Video RapidAPI orqali yuklab olindi: {output_path}")
                 return
-        except Exception as e:
-            print(f"[-] RapidAPI xatosi: {e}, fallback ga o'tamiz...")
+            except Exception as e:
+                print(f"[-] RapidAPI video download error: {e}")
 
     # yt-dlp fallback
     ydl_opts = {
