@@ -39,7 +39,8 @@ main_keyboard = InlineKeyboardMarkup(inline_keyboard=[
     [
         InlineKeyboardButton(text="🔍 Musiqani topish", callback_data="shazam_choice"),
         InlineKeyboardButton(text="📥 Videoni yuklash", callback_data="down_choice")
-    ]
+    ],
+    [InlineKeyboardButton(text="🌐 Saytdan foydalanish", url="https://sadoonbot.vercel.app/")]
 ])
 
 ADMIN_ID = 7110271171  # Haqiqiy Admin ID ulandi
