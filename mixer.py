@@ -17,7 +17,7 @@ else:
     ffmpeg_binary = "ffmpeg"
 
 def get_instagram_stream(url: str, type_required: str = "video"):
-    """Instagram uchun 4 bosqichli barqarorlashtirish tizimi"""
+    """Instagram uchun 10 bosqichli super-barqarorlashtirish tizimi"""
     
     # 0. Ssilkani tozalash
     if "?" in url:
@@ -27,61 +27,93 @@ def get_instagram_stream(url: str, type_required: str = "video"):
     headers = {"x-rapidapi-key": "af24a50843msh3494516d7830dcep165fd0jsn5bc86418db95"}
     errors = []
     
-    # 1. Cobalt (unscrobbler)
-    try:
-        cobalt_1 = "https://cobalt.api.unscrobbler.com/api/json"
-        res = requests.post(cobalt_1, headers={"Accept": "application/json", "Content-Type": "application/json"}, 
-                            json={"url": url, "isAudioOnly": True if type_required == "audio" else False}, timeout=8)
-        data = res.json()
-        if data.get("url"): return data["url"]
-        errors.append(f"Cobalt-1: {data.get('message', 'Nomalum')}")
-    except Exception as e:
-        errors.append(f"Cobalt-1: {str(e)}")
+    # 1. COBALT INSTANCES (Eng tez lekin tez-tez bloklanadi)
+    cobalt_instances = [
+        "https://api.cobalt.tools/api/json",
+        "https://cobalt-api.kwiateusz.xyz/api/json",
+        "https://cobalt.sh/api/json",
+        "https://imput.net/api/json"
+    ]
+    
+    for i, base in enumerate(cobalt_instances, 1):
+        try:
+            payload = {
+                "url": url,
+                "downloadMode": "audio" if type_required == "audio" else "video",
+                "isAudioOnly": True if type_required == "audio" else False,
+                "videoQuality": "720"
+            }
+            res = requests.post(base, headers={"Accept": "application/json", "Content-Type": "application/json"}, 
+                                json=payload, timeout=8)
+            if res.status_code == 200:
+                data = res.json()
+                if data.get("url"): return data["url"]
+        except: pass
 
-    # 2. Cobalt (rest instance)
-    try:
-        cobalt_2 = "https://api.cobalt.tools/api/json"
-        res = requests.post(cobalt_2, headers={"Accept": "application/json", "Content-Type": "application/json"}, 
-                            json={"url": url, "isAudioOnly": True if type_required == "audio" else False}, timeout=8)
-        data = res.json()
-        if data.get("url"): return data["url"]
-        errors.append(f"Cobalt-2: {data.get('message', 'Nomalum')}")
-    except Exception as e:
-        errors.append(f"Cobalt-2: {str(e)}")
+    # 2. RAPIDAPI INSTANCES (Barqarorroq, lekin quota bor)
+    rapid_providers = [
+        {"host": "instagram-reels-downloader-api.p.rapidapi.com", "endpoint": "/download", "params": {"url": url}},
+        {"host": "instagram-downloader-download-instagram-videos-stories.p.rapidapi.com", "endpoint": "/index", "params": {"url": url}},
+        {"host": "instagram-downloader2.p.rapidapi.com", "endpoint": "/index", "params": {"url": url}},
+        {"host": "social-downloader.p.rapidapi.com", "endpoint": "/api/instagram/video", "params": {"url": url}},
+        {"host": "instagram-bulk-scraper-latest.p.rapidapi.com", "endpoint": "/media_download_url", "params": {"url": url}},
+        {"host": "instagram-data12.p.rapidapi.com", "endpoint": "/media/info", "params": {"url": url}}
+    ]
 
-    # 3. API 1 (social-downloader)
-    try:
-        host1 = "social-downloader.p.rapidapi.com"
-        res = requests.get(f"https://{host1}/api/instagram/video", headers={**headers, "x-rapidapi-host": host1}, params={"url": url}, timeout=10)
-        data = res.json()
-        link = data.get("data", {}).get("video_url") or data.get("data", {}).get("media_url")
-        if link: return link
-        errors.append(f"Rapid-1: {data.get('message', 'Maalumot yoq')}")
-    except Exception as e:
-        errors.append(f"Rapid-1: {str(e)}")
+    for i, prov in enumerate(rapid_providers, 1):
+        try:
+            h = {**headers, "x-rapidapi-host": prov["host"]}
+            res = requests.get(f"https://{prov['host']}{prov['endpoint']}", headers=h, params=prov["params"], timeout=10)
+            if res.status_code != 200:
+                errors.append(f"Rapid-{i}: {res.status_code}")
+                continue
+                
+            data = res.json()
+            link = None
+            if "reels-downloader" in prov["host"]:
+                medias = data.get("data", {}).get("medias", [])
+                for m in medias:
+                    if type_required == "video" and m.get("type") == "video": link = m.get("url")
+                    if type_required == "audio" and (m.get("type") == "audio" or m.get("is_audio")): link = m.get("url")
+            elif "instagram-downloader" in prov["host"] or "instagram-downloader2" in prov["host"]:
+                link = data.get("media") or data.get("url")
+            elif "social-downloader" in prov["host"]:
+                link = data.get("data", {}).get("video_url") or data.get("data", {}).get("media_url")
+            elif "bulk-scraper" in prov["host"]:
+                link = data.get("data")
+            elif "instagram-data12" in prov["host"]:
+                # data12 ko'pincha murakkabroq qaytaradi
+                link = data.get("data", {}).get("video_url") or data.get("data", {}).get("audio_url")
+            
+            if link: return link
+            errors.append(f"Rapid-{i}: {data.get('message') or 'No link'}")
+        except:
+            errors.append(f"Rapid-{i}: error")
 
-    # 4. API 2 (instagram-reels-downloader-api)
+    # 3. FINAL FALLBACK: YT-DLP with Cookies (Agar hamma API'lar yotsa)
     try:
-        host2 = "instagram-reels-downloader-api.p.rapidapi.com"
-        res = requests.get(f"https://{host2}/download", headers={**headers, "x-rapidapi-host": host2}, params={"url": url}, timeout=10)
-        data = res.json()
-        medias = data.get("data", {}).get("medias", [])
-        for m in medias:
-            if type_required == "video" and m.get("type") == "video": return m.get("url")
-            if type_required == "audio" and (m.get("type") == "audio" or m.get("is_audio")): return m.get("url")
-        errors.append(f"Rapid-2: {data.get('message', 'Topilmadi')}")
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
+            'format': 'bestaudio/best' if type_required == 'audio' else 'bestvideo+bestaudio/best',
+            'get_url': True
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            if info.get('url'): return info['url']
     except Exception as e:
-        errors.append(f"Rapid-2: {str(e)}")
+        errors.append(f"yt-dlp: {str(e)[:50]}")
 
     return " | ".join(errors)
 
 def download_audio(url: str, output_path: str):
-    """Audioni tortib oladi (Instagram uchun faqat API)"""
+    """Audioni tortib oladi (API + yt-dlp fallback)"""
     if "instagram.com" in url:
         media_url = get_instagram_stream(url, type_required="audio")
         if not media_url or not isinstance(media_url, str) or not media_url.startswith("http"):
             err = media_url if isinstance(media_url, str) else "Noma'lum"
-            raise Exception(f"Instagram ssilkasi o'qilmadi. Sababi: {err}")
+            raise Exception(f"Yuklab bo'lmadi. Sababi: {err}")
         
         temp_v = f"{output_path}_temp.mp4"
         r = requests.get(media_url, stream=True, timeout=30)
