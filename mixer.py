@@ -30,29 +30,51 @@ async def get_instagram_video_url(url: str) -> str:
     print(f"[*] Playwright: {url}")
     
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox'])
         context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            viewport={"width": 1280, "height": 720}
         )
         await context.add_cookies(IG_COOKIES)
         page = await context.new_page()
         
         try:
-            await page.goto(url, timeout=30000)
-            await page.wait_for_timeout(8000)
+            await page.goto(url, timeout=30000, wait_until="domcontentloaded")
             
-            # Video elementlardan src olish
-            videos = await page.evaluate("""
-                () => {
-                    const videos = document.querySelectorAll('video');
-                    return Array.from(videos).map(v => v.src || v.currentSrc).filter(s => s && s.startsWith('http'));
-                }
-            """)
+            # Login dialog yoki boshqa popuplarni yopish
+            for selector in ['button:has-text("Not Now")', 'button:has-text("Decline")', '[aria-label="Close"]']:
+                try:
+                    btn = page.locator(selector).first
+                    if await btn.is_visible(timeout=2000):
+                        await btn.click()
+                        await page.wait_for_timeout(1000)
+                except:
+                    pass
             
-            if videos:
-                print(f"[+] Video topildi: {videos[0][:80]}...")
-                await browser.close()
-                return videos[0]
+            # Video element paydo bo'lishini kutish (max 15 soniya)
+            for attempt in range(3):
+                await page.wait_for_timeout(5000)
+                
+                videos = await page.evaluate("""
+                    () => {
+                        const videos = document.querySelectorAll('video');
+                        return Array.from(videos).map(v => v.src || v.currentSrc).filter(s => s && s.startsWith('http'));
+                    }
+                """)
+                
+                if videos:
+                    print(f"[+] Video topildi (attempt {attempt+1}): {videos[0][:80]}...")
+                    await browser.close()
+                    return videos[0]
+                
+                print(f"[*] Attempt {attempt+1}: video hali topilmadi, kutilmoqda...")
+            
+            # Debug: sahifada nima bor?
+            page_title = await page.title()
+            page_url = page.url
+            body_text = await page.evaluate("() => document.body?.innerText?.substring(0, 300) || 'empty'")
+            print(f"[-] Debug: title={page_title}, url={page_url}")
+            print(f"[-] Debug: body={body_text[:200]}")
                 
         except Exception as e:
             print(f"[-] Playwright xato: {e}")
