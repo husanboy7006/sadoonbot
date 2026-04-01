@@ -15,45 +15,75 @@ else:
     AudioSegment.converter = "ffmpeg"
     ffmpeg_binary = "ffmpeg"
 
-# Instagram cookies (env dan yoki hardcoded fallback)
-IG_COOKIES = [
-    {"name": "csrftoken", "value": os.getenv("IG_CSRF", "iATgLAVLxRKdeHf5enEcuk"), "domain": ".instagram.com", "path": "/"},
-    {"name": "ds_user_id", "value": os.getenv("IG_USER_ID", "72619245503"), "domain": ".instagram.com", "path": "/"},
-    {"name": "sessionid", "value": os.getenv("IG_SESSION", "72619245503%3AcfIWsEkZUkKfD7%3A8%3AAYiPRzsiHNaP_6vNmM2Yt1zPunP3woaU3GFHdCaYcw"), "domain": ".instagram.com", "path": "/"},
-    {"name": "mid", "value": os.getenv("IG_MID", "acgo0gALAAFlmmFzqVZpXOq5hZq0"), "domain": ".instagram.com", "path": "/"},
-    {"name": "ig_did", "value": os.getenv("IG_DID", "57703F0B-BC11-40A9-B5BA-4EBC7499B23D"), "domain": ".instagram.com", "path": "/"},
-    {"name": "datr", "value": os.getenv("IG_DATR", "0ijIaRLe-VW6YpeFwX2ugW6W"), "domain": ".instagram.com", "path": "/"},
-]
+def _extract_shortcode(url: str) -> str:
+    """URL dan shortcode ajratib olish"""
+    url = url.rstrip("/")
+    # /reel/ABC123/ yoki /p/ABC123/ formatdan
+    match = re.search(r'/(reel|p|tv)/([A-Za-z0-9_-]+)', url)
+    return match.group(2) if match else url.split("/")[-1]
 
 async def get_instagram_video_url(url: str) -> str:
-    """Playwright brauzer emulatori orqali Instagram video URL ni olish"""
-    print(f"[*] Playwright: {url}")
+    """Instagram embed sahifasi orqali video URL olish (login KERAK EMAS)"""
+    shortcode = _extract_shortcode(url)
+    embed_url = f"https://www.instagram.com/p/{shortcode}/embed/"
+    print(f"[*] Embed: {embed_url}")
     
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox'])
+        browser = await p.chromium.launch(
+            headless=True, 
+            args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+        )
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            viewport={"width": 1280, "height": 720}
+            viewport={"width": 540, "height": 960}
         )
-        await context.add_cookies(IG_COOKIES)
         page = await context.new_page()
         
         try:
-            await page.goto(url, timeout=30000, wait_until="domcontentloaded")
+            # BOSQICH 1: Embed sahifani ochish (login KERAK EMAS)
+            await page.goto(embed_url, timeout=30000, wait_until="domcontentloaded")
             
-            # Login dialog yoki boshqa popuplarni yopish
-            for selector in ['button:has-text("Not Now")', 'button:has-text("Decline")', '[aria-label="Close"]']:
+            for attempt in range(4):
+                await page.wait_for_timeout(3000)
+                
+                # Video <video> tagdan src olish
+                videos = await page.evaluate("""
+                    () => {
+                        const videos = document.querySelectorAll('video');
+                        return Array.from(videos).map(v => v.src || v.currentSrc).filter(s => s && s.startsWith('http'));
+                    }
+                """)
+                if videos:
+                    print(f"[+] Embed video topildi (attempt {attempt+1}): {videos[0][:80]}...")
+                    await browser.close()
+                    return videos[0]
+                
+                # Play tugmasini bosishga urinish (embed videoni avtomatik o'ynamaydi)
                 try:
-                    btn = page.locator(selector).first
-                    if await btn.is_visible(timeout=2000):
-                        await btn.click()
-                        await page.wait_for_timeout(1000)
+                    play_btn = page.locator('button, [role="button"], .EmbedVideo')
+                    if await play_btn.first.is_visible(timeout=1000):
+                        await play_btn.first.click()
                 except:
                     pass
+                    
+                print(f"[*] Embed attempt {attempt+1}/4: kutilmoqda...")
             
-            # Video element paydo bo'lishini kutish (max 15 soniya)
+            # BOSQICH 2: Embed ishlamasa, to'g'ridan-to'g'ri sahifani ochish
+            print("[*] Embed ishlamadi, direct page sinab ko'rilmoqda...")
+            direct_url = f"https://www.instagram.com/reel/{shortcode}/"
+            await page.goto(direct_url, timeout=30000, wait_until="domcontentloaded")
+            
             for attempt in range(3):
                 await page.wait_for_timeout(5000)
+                
+                # Popuplarni yopish
+                for sel in ['button:has-text("Not Now")', 'button:has-text("Decline")', '[aria-label="Close"]']:
+                    try:
+                        btn = page.locator(sel).first
+                        if await btn.is_visible(timeout=1000):
+                            await btn.click()
+                    except:
+                        pass
                 
                 videos = await page.evaluate("""
                     () => {
@@ -61,47 +91,40 @@ async def get_instagram_video_url(url: str) -> str:
                         return Array.from(videos).map(v => v.src || v.currentSrc).filter(s => s && s.startsWith('http'));
                     }
                 """)
-                
                 if videos:
-                    print(f"[+] Video topildi (attempt {attempt+1}): {videos[0][:80]}...")
+                    print(f"[+] Direct video topildi: {videos[0][:80]}...")
                     await browser.close()
                     return videos[0]
-                
-                print(f"[*] Attempt {attempt+1}: video hali topilmadi, kutilmoqda...")
             
-            # Debug: sahifada nima bor?
-            page_title = await page.title()
-            page_url = page.url
-            body_text = await page.evaluate("() => document.body?.innerText?.substring(0, 300) || 'empty'")
-            print(f"[-] Debug: title={page_title}, url={page_url}")
-            print(f"[-] Debug: body={body_text[:200]}")
+            # Debug
+            title = await page.title()
+            body = await page.evaluate("() => document.body?.innerText?.substring(0, 500) || 'empty'")
+            print(f"[-] FAIL: title={title}")
+            print(f"[-] FAIL: body={body[:300]}")
                 
         except Exception as e:
             print(f"[-] Playwright xato: {e}")
         
         await browser.close()
     
-    raise Exception("Instagram video topilmadi. Link noto'g'ri yoki post o'chirilgan bo'lishi mumkin.")
+    raise Exception("Video topilmadi. Link tekshiring yoki keyinroq urinib ko'ring.")
 
 async def download_audio(url: str, output_path: str):
     """Instagram video dan audio ajratib olish"""
     if "instagram.com" in url:
         video_url = await get_instagram_video_url(url)
         
-        # Videoni vaqtincha yuklab olish
         temp_v = f"{output_path}_temp.mp4"
         r = requests.get(video_url, stream=True, timeout=60)
         with open(temp_v, 'wb') as f:
             for chunk in r.iter_content(chunk_size=8192): 
                 f.write(chunk)
         
-        # Audio ajratish
         ffmpeg.input(temp_v).output(output_path, acodec='libmp3lame', ab='192k').overwrite_output().run(quiet=True, cmd=ffmpeg_binary)
         if os.path.exists(temp_v): os.remove(temp_v)
         print(f"[+] Audio tayyor: {output_path}")
         return
     
-    # Instagram bo'lmagan saytlar uchun yt-dlp
     import yt_dlp
     ydl_opts = {'format': 'bestaudio/best', 'outtmpl': output_path.replace('.mp3', ''), 'quiet': True}
     with yt_dlp.YoutubeDL(ydl_opts) as ydl: 
@@ -119,7 +142,6 @@ async def download_video(url: str, output_path: str):
         print(f"[+] Video tayyor: {output_path}")
         return
     
-    # Boshqa saytlar uchun yt-dlp
     import yt_dlp
     ydl_opts = {'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best', 'outtmpl': output_path, 'quiet': True}
     with yt_dlp.YoutubeDL(ydl_opts) as ydl: 
