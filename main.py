@@ -53,7 +53,7 @@ async def mix_audio_video(
             shutil.copyfileobj(image.file, buffer)
         
         # 2. Instagram ssilkasidan audioni mp3 qilib tortish
-        download_audio(url, audio_path)
+        await download_audio(url, audio_path)
         
         # 3. Yana o'sha audioni haligi rasm bilan qo'shish
         mix_image_audio(image_path, audio_path, output_path)
@@ -85,7 +85,7 @@ async def shazam_service(
         temp_path = f"temp/{task_id}_shazam.mp3"
         
         if url:
-            download_audio(url, temp_path)
+            await download_audio(url, temp_path)
         elif file:
             with open(temp_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
@@ -110,7 +110,7 @@ async def download_video_service(url: str = Form(...)):
         task_id = str(uuid.uuid4())
         video_path = f"output/{task_id}_download.mp4"
         
-        download_video(url, video_path)
+        await download_video(url, video_path)
         
         if os.path.exists(video_path):
             # Statistika (Saytdan)

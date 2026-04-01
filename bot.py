@@ -175,7 +175,7 @@ async def handle_download_direct(message: Message, state: FSMContext):
     try:
         os.makedirs("temp", exist_ok=True)
         video_path = f"temp/{message.from_user.id}_d.mp4"
-        download_video(url, video_path)
+        await download_video(url, video_path)
         db.log_stats(message.from_user.id, "download")
         if os.path.exists(video_path):
             await message.answer_video(video=FSInputFile(video_path), caption="Tayyor! 📥")
@@ -193,7 +193,7 @@ async def handle_shazam_direct(message: Message, state: FSMContext):
         os.makedirs("temp", exist_ok=True)
         temp_path = f"temp/{message.from_user.id}_s.mp3"
         if message.text and "http" in message.text:
-            download_audio(message.text, temp_path)
+            await download_audio(message.text, temp_path)
         elif message.audio or message.voice or message.video:
             file_id = message.audio.file_id if message.audio else (message.voice.file_id if message.voice else message.video.file_id)
             await bot.download(file_id, destination=temp_path)

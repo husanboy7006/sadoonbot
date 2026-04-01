@@ -4,7 +4,7 @@ import requests
 import ffmpeg
 from shazamio import Shazam
 from pydub import AudioSegment
-from playwright.sync_api import sync_playwright
+from playwright.async_api import async_playwright
 
 # FFmpeg sozlamasi
 if os.path.exists("ffmpeg.exe"):
@@ -25,24 +25,24 @@ IG_COOKIES = [
     {"name": "datr", "value": os.getenv("IG_DATR", "0ijIaRLe-VW6YpeFwX2ugW6W"), "domain": ".instagram.com", "path": "/"},
 ]
 
-def get_instagram_video_url(url: str) -> str:
+async def get_instagram_video_url(url: str) -> str:
     """Playwright brauzer emulatori orqali Instagram video URL ni olish"""
     print(f"[*] Playwright: {url}")
     
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context(
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
         )
-        context.add_cookies(IG_COOKIES)
-        page = context.new_page()
+        await context.add_cookies(IG_COOKIES)
+        page = await context.new_page()
         
         try:
-            page.goto(url, timeout=30000)
-            page.wait_for_timeout(8000)
+            await page.goto(url, timeout=30000)
+            await page.wait_for_timeout(8000)
             
             # Video elementlardan src olish
-            videos = page.evaluate("""
+            videos = await page.evaluate("""
                 () => {
                     const videos = document.querySelectorAll('video');
                     return Array.from(videos).map(v => v.src || v.currentSrc).filter(s => s && s.startsWith('http'));
@@ -51,20 +51,20 @@ def get_instagram_video_url(url: str) -> str:
             
             if videos:
                 print(f"[+] Video topildi: {videos[0][:80]}...")
-                browser.close()
+                await browser.close()
                 return videos[0]
                 
         except Exception as e:
             print(f"[-] Playwright xato: {e}")
         
-        browser.close()
+        await browser.close()
     
     raise Exception("Instagram video topilmadi. Link noto'g'ri yoki post o'chirilgan bo'lishi mumkin.")
 
-def download_audio(url: str, output_path: str):
+async def download_audio(url: str, output_path: str):
     """Instagram video dan audio ajratib olish"""
     if "instagram.com" in url:
-        video_url = get_instagram_video_url(url)
+        video_url = await get_instagram_video_url(url)
         
         # Videoni vaqtincha yuklab olish
         temp_v = f"{output_path}_temp.mp4"
@@ -85,10 +85,10 @@ def download_audio(url: str, output_path: str):
     with yt_dlp.YoutubeDL(ydl_opts) as ydl: 
         ydl.download([url])
 
-def download_video(url: str, output_path: str):
+async def download_video(url: str, output_path: str):
     """Instagram video ni yuklab olish"""
     if "instagram.com" in url:
-        video_url = get_instagram_video_url(url)
+        video_url = await get_instagram_video_url(url)
         
         r = requests.get(video_url, stream=True, timeout=60)
         with open(output_path, 'wb') as f:
