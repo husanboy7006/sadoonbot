@@ -7,6 +7,7 @@ import uuid
 import shutil
 import sys
 from mixer import download_audio, mix_image_audio, identify_music, download_video
+import database as db
 
 # Windows uchun joriy papkada (c:\InstaMixer) joylashgan ffmpeg.exe va ffprobe.exe ni 
 # tizim PATH o'zgaruvchisiga dastur ishga tushayotganda qo'shib qo'yamiz.
@@ -57,6 +58,9 @@ async def mix_audio_video(
         # 3. Yana o'sha audioni haligi rasm bilan qo'shish
         mix_image_audio(image_path, audio_path, output_path)
         
+        # Statistika (Saytdan)
+        db.log_stats(0, "mix")
+        
         # Tozalash - jarayon tugagach oddiy rasm va audioni udalit qilish 
         # (server xotirasi to'lmasligi uchun)
         if os.path.exists(image_path): os.remove(image_path)
@@ -92,6 +96,8 @@ async def shazam_service(
         if os.path.exists(temp_path): os.remove(temp_path)
         
         if track:
+            # Statistika (Saytdan)
+            db.log_stats(0, "shazam")
             return {"status": "success", "track": track}
         else:
             return {"status": "error", "message": "Musiqa topilmadi"}
@@ -107,6 +113,8 @@ async def download_video_service(url: str = Form(...)):
         download_video(url, video_path)
         
         if os.path.exists(video_path):
+            # Statistika (Saytdan)
+            db.log_stats(0, "download")
             return {
                 "status": "success", 
                 "download_url": f"/download/{task_id}_download"
