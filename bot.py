@@ -159,7 +159,7 @@ async def handle_mix_link(message: Message, state: FSMContext):
                 if result.get("status") == "success":
                     # download_url /download/TASK_ID formatida keladi
                     task_id = result.get('download_url').split("/")[-1]
-                    video_path = f"output/{task_id}_mixed.mp4"
+                    video_path = f"output/{task_id}_final.mp4"
                     
                     if os.path.exists(video_path):
                         await message.answer_video(video=FSInputFile(video_path), caption="Tayyor! 🎥")
