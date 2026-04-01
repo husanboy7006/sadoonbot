@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.types import Message, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BotCommand
 from mixer import download_audio, mix_image_audio, identify_music, download_video
 import database as db
 
@@ -65,9 +65,6 @@ async def admin_stats_handler(message: Message):
     else:
         await message.answer("❌ Bu buyruq faqat Admin uchun!")
 
-@dp.message(F.text == "/my_id")
-async def my_id_handler(message: Message):
-    await message.answer(f"Sizning ID: `{message.from_user.id}`", parse_mode="Markdown")
 
 @dp.callback_query(F.data == "mix_choice")
 async def mix_choice_btn(callback: CallbackQuery, state: FSMContext):
@@ -190,6 +187,14 @@ async def handle_shazam_direct(message: Message, state: FSMContext):
 async def main():
     # Bazani tayyorlaymiz
     db.init_db()
+    
+    # Buyruqlar menyusini o'rnatish
+    commands = [
+        BotCommand(command="start", description="🏠 Botni boshlash"),
+        BotCommand(command="admin", description="📊 Statistika (Admin)")
+    ]
+    await bot.set_my_commands(commands)
+    
     print("Bot muvaffaqiyatli ishga tushdi...")
     # Kutib qolgan xabarlarni tozalab, botni toza holatda ishga tushiramiz
     await bot.delete_webhook(drop_pending_updates=True)
