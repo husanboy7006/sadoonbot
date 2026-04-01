@@ -164,7 +164,7 @@ async def handle_mix_link(message: Message, state: FSMContext):
                     if os.path.exists(video_path):
                         await message.answer_video(video=FSInputFile(video_path), caption="Tayyor! 🎥")
                         # Faylni yuborgach o'chirib yuboramiz (serverda joy tejash uchun)
-                        # os.remove(video_path) 
+                        os.remove(video_path) 
                     else:
                         await message.answer("❌ Xatolik: Tayyor video fayli topilmadi.")
                 else:
