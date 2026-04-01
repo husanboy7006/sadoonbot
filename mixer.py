@@ -1,154 +1,110 @@
-import yt_dlp
-import ffmpeg
 import os
+import re
 import requests
+import ffmpeg
 from shazamio import Shazam
 from pydub import AudioSegment
+from playwright.sync_api import sync_playwright
 
-# FFmpeg ni har qanday muhitda (Windows yoki Linux) to'g'ri ishlashi uchun:
+# FFmpeg sozlamasi
 if os.path.exists("ffmpeg.exe"):
-    # Windows: loyal papkadagi ffmpeg.exe ishlatilsin
     os.environ["PATH"] += os.pathsep + os.path.abspath(".")
     AudioSegment.converter = os.path.abspath("ffmpeg.exe")
     ffmpeg_binary = os.path.abspath("ffmpeg.exe")
 else:
-    # Linux (Server): tizimning tubidagi ffmpeg ishlatilsin
     AudioSegment.converter = "ffmpeg"
     ffmpeg_binary = "ffmpeg"
 
-def find_best_media_in_json(obj, type_required):
-    """JSON ichidan rekurziya orqali eng mos linkni topadi"""
-    candidates = []
-    exts = [".mp3", ".m4a", "audio", "mp3"] if type_required == "audio" else [".mp4", "video", "mp4"]
-    
-    def recurse(d):
-        if isinstance(d, dict):
-            for k, v in d.items():
-                if isinstance(v, (dict, list)): recurse(v)
-                elif isinstance(v, str) and v.startswith("http"):
-                    if any(x in v.lower() for x in exts): candidates.append(v)
-        elif isinstance(d, list):
-            for i in d: recurse(i)
-            
-    recurse(obj)
-    return candidates[0] if candidates else None
+# Instagram cookies (env dan yoki hardcoded fallback)
+IG_COOKIES = [
+    {"name": "csrftoken", "value": os.getenv("IG_CSRF", "iATgLAVLxRKdeHf5enEcuk"), "domain": ".instagram.com", "path": "/"},
+    {"name": "ds_user_id", "value": os.getenv("IG_USER_ID", "72619245503"), "domain": ".instagram.com", "path": "/"},
+    {"name": "sessionid", "value": os.getenv("IG_SESSION", "72619245503%3AcfIWsEkZUkKfD7%3A8%3AAYiPRzsiHNaP_6vNmM2Yt1zPunP3woaU3GFHdCaYcw"), "domain": ".instagram.com", "path": "/"},
+    {"name": "mid", "value": os.getenv("IG_MID", "acgo0gALAAFlmmFzqVZpXOq5hZq0"), "domain": ".instagram.com", "path": "/"},
+    {"name": "ig_did", "value": os.getenv("IG_DID", "57703F0B-BC11-40A9-B5BA-4EBC7499B23D"), "domain": ".instagram.com", "path": "/"},
+    {"name": "datr", "value": os.getenv("IG_DATR", "0ijIaRLe-VW6YpeFwX2ugW6W"), "domain": ".instagram.com", "path": "/"},
+]
 
-def get_instagram_stream(url: str, type_required: str = "video"):
-    """Instagram uchun 15 bosqichli mega-barqarorlashtirish tizimi"""
+def get_instagram_video_url(url: str) -> str:
+    """Playwright brauzer emulatori orqali Instagram video URL ni olish"""
+    print(f"[*] Playwright: {url}")
     
-    # 0. Ssilkani tozalash
-    if "?" in url: url = url.split("?")[0]
-    if not url.endswith("/"): url += "/"
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        )
+        context.add_cookies(IG_COOKIES)
+        page = context.new_page()
         
-    headers = {"x-rapidapi-key": "af24a50843msh3494516d7830dcep165fd0jsn5bc86418db95"}
-    errors = []
-    
-    # 1. COBALT INSTANCES (v10 payload)
-    instances = [
-        "https://api.cobalt.tools/api/json", "https://cobalt-api.kwiateusz.xyz/api/json",
-        "https://cobalt.sh/api/json", "https://imput.net/api/json",
-        "https://api.geronimo.top/api/json", "https://cobalt-api.v0lume.xyz/api/json"
-    ]
-    for i, base in enumerate(instances, 1):
         try:
-            res = requests.post(base, headers={"Accept": "application/json", "Content-Type": "application/json"}, 
-                                json={"url": url, "downloadMode": "audio" if type_required == "audio" else "video", "videoQuality": "720"}, timeout=6)
-            if res.status_code == 200:
-                d = res.json()
-                if d.get("url"): return d["url"]
-        except: pass
-
-    # 2. RAPIDAPI (Power search bilan)
-    rapid_hosts = [
-        "instagram-reels-downloader-api.p.rapidapi.com",
-        "instagram-downloader-v2.p.rapidapi.com",
-        "instagram-downloader-download-instagram-videos-stories.p.rapidapi.com",
-        "instagram-media-downloader.p.rapidapi.com",
-        "social-downloader.p.rapidapi.com",
-        "instagram-bulk-scraper-latest.p.rapidapi.com",
-        "instagram-data12.p.rapidapi.com"
-    ]
-    
-    for i, host in enumerate(rapid_hosts, 1):
-        try:
-            params = {"url": url}
-            endpoint = "/download" if "reels" in host else ("/index" if "downloader" in host else "/media/info")
-            if "bulk" in host: endpoint = "/media_download_url"
+            page.goto(url, timeout=30000)
+            page.wait_for_timeout(8000)
             
-            res = requests.get(f"https://{host}{endpoint}", headers={**headers, "x-rapidapi-host": host}, params=params, timeout=10)
-            if res.status_code == 200:
-                data = res.json()
-                # 2.1 Ma'lum bir kalitlarni tekshirish
-                link = data.get("media") or data.get("url") or data.get("download_url") or data.get("video_url")
-                if not link: # 2.2 Deep recursion search
-                    link = find_best_media_in_json(data, type_required)
+            # Video elementlardan src olish
+            videos = page.evaluate("""
+                () => {
+                    const videos = document.querySelectorAll('video');
+                    return Array.from(videos).map(v => v.src || v.currentSrc).filter(s => s && s.startsWith('http'));
+                }
+            """)
+            
+            if videos:
+                print(f"[+] Video topildi: {videos[0][:80]}...")
+                browser.close()
+                return videos[0]
                 
-                if link and isinstance(link, str) and link.startswith("http"): return link
-            errors.append(f"R{i}:{res.status_code}")
-        except:
-            errors.append(f"R{i}:Err")
-
-    # 3. YT-DLP FALLBACK (Oxirgi chora)
-    try:
-        # Eng oxirgi linkni olishga harakat qilamiz
-        ydl_opts = {
-            'quiet': True, 'no_warnings': True,
-            'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
-            'format': 'best', 'get_url': True
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            if info.get('url'): return info['url']
-            if info.get('entries'): return info['entries'][0].get('url')
-    except Exception as e:
-        errors.append(f"ytd:{str(e)[:15]}")
-
-    return " | ".join(errors)
+        except Exception as e:
+            print(f"[-] Playwright xato: {e}")
+        
+        browser.close()
+    
+    raise Exception("Instagram video topilmadi. Link noto'g'ri yoki post o'chirilgan bo'lishi mumkin.")
 
 def download_audio(url: str, output_path: str):
-    """Audioni tortib oladi (API + yt-dlp fallback)"""
+    """Instagram video dan audio ajratib olish"""
     if "instagram.com" in url:
-        media_url = get_instagram_stream(url, type_required="audio")
-        if not media_url or not isinstance(media_url, str) or not media_url.startswith("http"):
-            err = media_url if isinstance(media_url, str) else "Noma'lum"
-            raise Exception(f"Yuklab bo'lmadi. Sababi: {err}")
+        video_url = get_instagram_video_url(url)
         
+        # Videoni vaqtincha yuklab olish
         temp_v = f"{output_path}_temp.mp4"
-        r = requests.get(media_url, stream=True, timeout=30)
+        r = requests.get(video_url, stream=True, timeout=60)
         with open(temp_v, 'wb') as f:
-            for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
+            for chunk in r.iter_content(chunk_size=8192): 
+                f.write(chunk)
         
+        # Audio ajratish
         ffmpeg.input(temp_v).output(output_path, acodec='libmp3lame', ab='192k').overwrite_output().run(quiet=True, cmd=ffmpeg_binary)
         if os.path.exists(temp_v): os.remove(temp_v)
         print(f"[+] Audio tayyor: {output_path}")
         return
-
+    
     # Instagram bo'lmagan saytlar uchun yt-dlp
+    import yt_dlp
     ydl_opts = {'format': 'bestaudio/best', 'outtmpl': output_path.replace('.mp3', ''), 'quiet': True}
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl: ydl.download([url])
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl: 
+        ydl.download([url])
 
 def download_video(url: str, output_path: str):
-    """Videoni yuklab oladi (Instagram uchun faqat API)"""
+    """Instagram video ni yuklab olish"""
     if "instagram.com" in url:
-        media_url = get_instagram_stream(url, type_required="video")
-        if not media_url or not isinstance(media_url, str) or not media_url.startswith("http"):
-            err = media_url if isinstance(media_url, str) else "Noma'lum"
-            raise Exception(f"Instagram video o'qilmadi. Sababi: {err}")
+        video_url = get_instagram_video_url(url)
         
-        r = requests.get(media_url, stream=True, timeout=60)
+        r = requests.get(video_url, stream=True, timeout=60)
         with open(output_path, 'wb') as f:
-            for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
+            for chunk in r.iter_content(chunk_size=8192): 
+                f.write(chunk)
         print(f"[+] Video tayyor: {output_path}")
         return
-
-    # Boshqa saytlar
+    
+    # Boshqa saytlar uchun yt-dlp
+    import yt_dlp
     ydl_opts = {'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best', 'outtmpl': output_path, 'quiet': True}
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl: ydl.download([url])
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl: 
+        ydl.download([url])
 
 def mix_image_audio(image_path: str, audio_path: str, output_path: str):
-    """
-    Rasm va Audioni birlashtiradi.
-    """
+    """Rasm va Audioni birlashtiradi"""
     print("[*] Rasm va audioni birlashtirish boshlandi...")
     input_image = ffmpeg.input(image_path, loop=1).filter('scale', 'trunc(iw/2)*2', 'trunc(ih/2)*2')
     input_audio = ffmpeg.input(audio_path)
@@ -162,9 +118,7 @@ def mix_image_audio(image_path: str, audio_path: str, output_path: str):
     print(f"[+] Video tayyor: {output_path}")
 
 async def identify_music(file_path: str):
-    """
-    Shazam orqali musiqani aniqlaydi.
-    """
+    """Shazam orqali musiqani aniqlaydi"""
     shazam = Shazam()
     out = await shazam.recognize(file_path)
     if not out.get('track'): return None
