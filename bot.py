@@ -157,8 +157,16 @@ async def handle_mix_link(message: Message, state: FSMContext):
             async with session.post(API_URL, data=form_data, timeout=300) as response:
                 result = await response.json()
                 if result.get("status") == "success":
-                    video_url = result.get('download_url')
-                    await message.answer_video(video=f"http://127.0.0.1:7860{video_url}" if "http" not in video_url else video_url, caption="Tayyor! 🎥")
+                    # download_url /download/TASK_ID formatida keladi
+                    task_id = result.get('download_url').split("/")[-1]
+                    video_path = f"output/{task_id}_mixed.mp4"
+                    
+                    if os.path.exists(video_path):
+                        await message.answer_video(video=FSInputFile(video_path), caption="Tayyor! 🎥")
+                        # Faylni yuborgach o'chirib yuboramiz (serverda joy tejash uchun)
+                        # os.remove(video_path) 
+                    else:
+                        await message.answer("❌ Xatolik: Tayyor video fayli topilmadi.")
                 else:
                     await message.answer(f"❌ Xato: {result.get('message')}")
         if os.path.exists(photo_path): os.remove(photo_path)
