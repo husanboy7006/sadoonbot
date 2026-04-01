@@ -27,6 +27,15 @@ def add_user(user_id, username):
         }, on_conflict="user_id").execute()
     except: pass
 
+def get_all_users():
+    """Barcha foydalanuvchilar ID ro'yxatini qaytaradi (reklama yuborish uchun)"""
+    try:
+        res = supabase.table("users").select("user_id").execute()
+        return [row['user_id'] for row in res.data]
+    except Exception as e:
+        print(f"Error fetching users: {e}")
+        return []
+
 def log_stats(user_id, service_type):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
@@ -53,7 +62,6 @@ def get_stats_report():
         data = stats_res.data
         
         # Alohida hisoblash uchun lug'at
-        # Format: { 'mix': {'bot': 0, 'web': 0}, ... }
         breakdown = {
             "mix": {"bot": 0, "web": 0},
             "shazam": {"bot": 0, "web": 0},
