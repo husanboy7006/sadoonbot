@@ -58,7 +58,7 @@ def get_stats_report():
         new_users_today = new_res.count if new_res.count is not None else 0
         
         # Barcha amallarni olish (Lifetime)
-        stats_res = supabase.table("stats").select("user_id, service_type, created_at").execute() # created_at ni ham olamiz
+        stats_res = supabase.table("stats").select("user_id, service_type, timestamp").execute() 
         data = stats_res.data or []
         
         # Hisoblash uchun lug'atlar
@@ -69,15 +69,15 @@ def get_stats_report():
         
         for item in data:
             stype = item.get("service_type")
-            if not stype or stype not in total_bd: continue
+            if not stype or stype not in total_bd: stype = "download" # fallback
             
             # Lifetime stats
-            total_bd[stype] += 1
+            total_bd[stype] = total_bd.get(stype, 0) + 1
             
-            # Today's stats (Kutilmagan xatoliklarni oldini olish uchun local check)
-            created_at = item.get("created_at", "")
-            if today_str in created_at:
-                today_bd[stype] += 1
+            # Today's stats (timestamp ni tekshiramiz)
+            ts = item.get("timestamp", "")
+            if today_str in ts:
+                today_bd[stype] = today_bd.get(stype, 0) + 1
             
         report = f"📊 <b>InstaMixer Admin Paneli</b>\n"
         report += f"━━━━━━━━━━━━━━━\n\n"
