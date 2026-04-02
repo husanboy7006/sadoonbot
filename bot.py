@@ -58,7 +58,7 @@ async def admin_stats_handler(message: Message):
         admin_kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="📢 Hammasiga xabar yuborish", callback_data="broadcast_start")]
         ])
-        await message.answer(report, reply_markup=admin_kb)
+        await message.answer(report, reply_markup=admin_kb, parse_mode="HTML")
     else:
         await message.answer("❌ Bu buyruq faqat Admin uchun!")
 

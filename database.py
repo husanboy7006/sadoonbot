@@ -79,25 +79,25 @@ def get_stats_report():
             if today_str in created_at:
                 today_bd[stype] += 1
             
-        report = f"📊 **InstaMixer Admin Paneli**\n"
+        report = f"📊 <b>InstaMixer Admin Paneli</b>\n"
         report += f"━━━━━━━━━━━━━━━\n\n"
         
-        report += f"👥 **Foydalanuvchilar**\n"
+        report += f"👥 <b>Foydalanuvchilar</b>\n"
         report += f"├─ Jami: {total_users} kishi\n"
         report += f"└─ Bugun: +{new_users_today} yangi\n\n"
         
-        report += f"📅 **BUGUNGI AKTIVLIK:**\n"
+        report += f"📅 <b>BUGUNGI AKTIVLIK:</b>\n"
         report += f"├─ 🎬 Mix: {today_bd['mix']}\n"
         report += f"├─ 🔍 Shazam: {today_bd['shazam']}\n"
         report += f"└─ 📥 Download: {today_bd['download']}\n\n"
         
-        report += f"🚀 **UMUMIY AKTIVLIK:**\n"
+        report += f"🚀 <b>UMUMIY AKTIVLIK:</b>\n"
         report += f"├─ 🎬 Mix: {total_bd['mix']}\n"
         report += f"├─ 🔍 Shazam: {total_bd['shazam']}\n"
         report += f"└─ 📥 Download: {total_bd['download']}\n\n"
         
         total_actions = len(data)
-        report += f"📈 **JAMI AMALLAR:** {total_actions} marta\n"
+        report += f"📈 <b>JAMI AMALLAR:</b> {total_actions} marta\n"
         report += f"━━━━━━━━━━━━━━━"
         
         return report
