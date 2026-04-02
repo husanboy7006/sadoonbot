@@ -76,17 +76,31 @@ def get_stats_report():
                 else:
                     breakdown[stype]["bot"] += 1
             
-        report = f"📊 **Bot Statistikasi (Cloud)**\n\n"
-        report += f"👥 Jami foydalanuvchilar: {total_users}\n"
-        report += f"🆕 Bugun qo'shilganlar: {new_users_today}\n\n"
+        report = f"📊 **InstaMixer Admin Paneli**\n"
+        report += f"━━━━━━━━━━━━━━━\n\n"
         
-        report += f"⚙️ **Xizmatlar aktivligi:**\n"
+        report += f"👥 **Foydalanuvchilar**\n"
+        report += f"├─ Jami: {total_users} kishi\n"
+        report += f"└─ Bugun: +{new_users_today} yangi\n\n"
         
-        for key, name in [("mix", "🎬 Video Mix"), ("shazam", "🔍 Shazam"), ("download", "📥 Downloader")]:
-            b = breakdown[key]
-            total = b['bot'] + b['web']
-            report += f"{name}: {total} (🤖 Bot: {b['bot']} | 🌐 Sayt: {b['web']})\n"
-            
+        report += f"🚀 **Xizmatlar statistikasi**\n"
+        
+        # Bot stats
+        report += f"🤖 **BOT ORQALI:**\n"
+        report += f"├─ 🎬 Mix: {breakdown['mix']['bot']}\n"
+        report += f"├─ 🔍 Shazam: {breakdown['shazam']['bot']}\n"
+        report += f"└─ 📥 Download: {breakdown['download']['bot']}\n\n"
+        
+        # Web stats
+        report += f"🌐 **SAYT ORQALI:**\n"
+        report += f"├─ 🎬 Mix: {breakdown['mix']['web']}\n"
+        report += f"├─ 🔍 Shazam: {breakdown['shazam']['web']}\n"
+        report += f"└─ 📥 Download: {breakdown['download']['web']}\n\n"
+        
+        total_actions = len(data) if data else 0
+        report += f"📈 **UMUMIY AKTIVLIK:** {total_actions} marta\n"
+        report += f"━━━━━━━━━━━━━━━"
+        
         return report
     except Exception as e:
         return f"❌ Xato: {str(e)[:50]}"
