@@ -57,24 +57,24 @@ def get_stats_report():
         new_res = supabase.table("users").select("user_id", count="exact").filter("join_date", "gte", f"{today} 00:00:00").execute()
         new_users_today = new_res.count if new_res.count is not None else 0
         
-        # Barcha amallarni olish
+        # Barcha amallarni olish (Lifetime)
         stats_res = supabase.table("stats").select("user_id, service_type").execute()
-        data = stats_res.data
+        data = stats_res.data or []
         
-        # Alohida hisoblash uchun lug'at
-        breakdown = {
-            "mix": {"bot": 0, "web": 0},
-            "shazam": {"bot": 0, "web": 0},
-            "download": {"bot": 0, "web": 0}
-        }
+        # Bugungi amallarni olish
+        today_stats_res = supabase.table("stats").select("user_id, service_type").filter("created_at", "gte", f"{today} 00:00:00").execute()
+        today_data = today_stats_res.data or []
         
-        for item in data:
-            stype = item["service_type"]
-            if stype in breakdown:
-                if item["user_id"] == 0:
-                    breakdown[stype]["web"] += 1
-                else:
-                    breakdown[stype]["bot"] += 1
+        # Hisoblash funksiyasi
+        def get_breakdown(data_list):
+            bd = {"mix": 0, "shazam": 0, "download": 0}
+            for item in data_list:
+                stype = item["service_type"]
+                if stype in bd: bd[stype] += 1
+            return bd
+
+        total_bd = get_breakdown(data)
+        today_bd = get_breakdown(today_data)
             
         report = f"📊 **InstaMixer Admin Paneli**\n"
         report += f"━━━━━━━━━━━━━━━\n\n"
@@ -83,22 +83,18 @@ def get_stats_report():
         report += f"├─ Jami: {total_users} kishi\n"
         report += f"└─ Bugun: +{new_users_today} yangi\n\n"
         
-        report += f"🚀 **Xizmatlar statistikasi**\n"
+        report += f"📅 **BUGUNGI AKTIVLIK:**\n"
+        report += f"├─ 🎬 Mix: {today_bd['mix']}\n"
+        report += f"├─ 🔍 Shazam: {today_bd['shazam']}\n"
+        report += f"└─ 📥 Download: {today_bd['download']}\n\n"
         
-        # Bot stats
-        report += f"🤖 **BOT ORQALI:**\n"
-        report += f"├─ 🎬 Mix: {breakdown['mix']['bot']}\n"
-        report += f"├─ 🔍 Shazam: {breakdown['shazam']['bot']}\n"
-        report += f"└─ 📥 Download: {breakdown['download']['bot']}\n\n"
+        report += f"🚀 **UMUMIY AKTIVLIK:**\n"
+        report += f"├─ 🎬 Mix: {total_bd['mix']}\n"
+        report += f"├─ 🔍 Shazam: {total_bd['shazam']}\n"
+        report += f"└─ 📥 Download: {total_bd['download']}\n\n"
         
-        # Web stats
-        report += f"🌐 **SAYT ORQALI:**\n"
-        report += f"├─ 🎬 Mix: {breakdown['mix']['web']}\n"
-        report += f"├─ 🔍 Shazam: {breakdown['shazam']['web']}\n"
-        report += f"└─ 📥 Download: {breakdown['download']['web']}\n\n"
-        
-        total_actions = len(data) if data else 0
-        report += f"📈 **UMUMIY AKTIVLIK:** {total_actions} marta\n"
+        total_actions = len(data)
+        report += f"📈 **JAMI AMALLAR:** {total_actions} marta\n"
         report += f"━━━━━━━━━━━━━━━"
         
         return report
