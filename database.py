@@ -79,7 +79,7 @@ def get_stats_report():
             if today_str in ts:
                 today_bd[stype] = today_bd.get(stype, 0) + 1
             
-        report = f"📊 <b>InstaMixer Admin Paneli</b>\n"
+        report = f"📊 <b>Sadoon AI Admin Paneli</b>\n"
         report += f"━━━━━━━━━━━━━━━\n\n"
         
         report += f"👥 <b>Foydalanuvchilar</b>\n"
