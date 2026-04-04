@@ -87,14 +87,14 @@ def get_stats_report():
         report += f"└─ Bugun: +{new_users_today} yangi\n\n"
         
         report += f"📅 <b>BUGUNGI AKTIVLIK:</b>\n"
-        report += f"├─ 🎬 Mix: {today_bd['mix']}\n"
-        report += f"├─ 🔍 Shazam: {today_bd['shazam']}\n"
-        report += f"└─ 📥 Download: {today_bd['download']}\n\n"
+        report += f"├─ 🎬 Klip yasash: {today_bd['mix']}\n"
+        report += f"├─ 🔍 Musiqa topish: {today_bd['shazam']}\n"
+        report += f"└─ 📥 Instagram: {today_bd['download']}\n\n"
         
         report += f"🚀 <b>UMUMIY AKTIVLIK:</b>\n"
-        report += f"├─ 🎬 Mix: {total_bd['mix']}\n"
-        report += f"├─ 🔍 Shazam: {total_bd['shazam']}\n"
-        report += f"└─ 📥 Download: {total_bd['download']}\n\n"
+        report += f"├─ 🎬 Klip yasash: {total_bd['mix']}\n"
+        report += f"├─ 🔍 Musiqa topish: {total_bd['shazam']}\n"
+        report += f"└─ 📥 Instagram: {total_bd['download']}\n\n"
         
         total_actions = len(data)
         report += f"📈 <b>JAMI AMALLAR:</b> {total_actions} marta\n"
