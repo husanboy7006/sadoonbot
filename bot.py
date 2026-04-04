@@ -30,13 +30,13 @@ class MixState(StatesGroup):
 
 # Asosiy tugmalar (Menu)
 main_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="🎬 Video yasash", callback_data="mix_choice")],
+    [InlineKeyboardButton(text="🎬 Klip yasash (🖼 rasm + 🎵 musiqa)", callback_data="mix_choice")],
+    [InlineKeyboardButton(text="📥 Instagram (Video yuklash)", callback_data="down_choice")],
     [
         InlineKeyboardButton(text="🔍 Musiqani topish", callback_data="shazam_choice"),
-        InlineKeyboardButton(text="📥 Videoni yuklash", callback_data="down_choice")
+        InlineKeyboardButton(text="✍️ Takliflar", callback_data="feedback_choice")
     ],
-    [InlineKeyboardButton(text="✍️ Taklif / Shikoyat", callback_data="feedback_choice")],
-    [InlineKeyboardButton(text="🌐 Sayt", url="https://sadoonbot.vercel.app/")]
+    [InlineKeyboardButton(text="🌐 Sadoon AI Sayti", url="https://sadoonbot.vercel.app/")]
 ])
 
 ADMIN_ID = 7110271171 
@@ -44,10 +44,15 @@ ADMIN_ID = 7110271171
 @dp.message(CommandStart())
 async def command_start_handler(message: Message, state: FSMContext) -> None:
     db.add_user(message.from_user.id, message.from_user.username)
-    await message.answer(
-        "👋 Salom! Men **Sadoon** botiman 🎥\n\nNima qilmoqchimiz? Tanlang:",
-        reply_markup=main_keyboard
+    start_text = (
+        "👋 **Salom! Men Sadoon AI botiman.**\n\n"
+        "Men sizga quyidagi ishlarda yordam bera olaman:\n"
+        "🎬 **Klip yasash** — Rasmingizga sevimli musiqangizni qo'shib video tayyorlash.\n"
+        "📥 **Instagram** — Reels va har qanday videoni yuklab olish.\n"
+        "🔍 **Shazam** — Istalgan musiqani bir zumda topish.\n\n"
+        "**Nima qilmoqchimiz? Pastdan tanlang:** 👇"
     )
+    await message.answer(start_text, reply_markup=main_keyboard, parse_mode="Markdown")
     await state.clear()
 
 # --- ADMIN PANEL ---
