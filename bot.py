@@ -68,6 +68,12 @@ async def admin_stats_handler(message: Message):
         await message.answer("❌ Bu buyruq faqat Admin uchun!")
 
 # --- MULTICAST (AD) SYSTEM ---
+@dp.callback_query(F.data == "broadcast_start")
+async def start_broadcast(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id != ADMIN_ID:
+        return await callback.answer("Ruxsat yo'q!", show_alert=True)
+        
+    await callback.answer()
     cancel_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Bekor qilish", callback_data="broadcast_cancel")]])
     await callback.message.answer("📣 Barcha foydalanuvchilarga yubormoqchi bo'lgan xabaringizni yozing (matn, rasm yoki video):", reply_markup=cancel_kb)
     await state.set_state(MixState.waiting_for_broadcast)
