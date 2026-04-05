@@ -19,9 +19,9 @@ API_URL = os.getenv("API_URL", "http://127.0.0.1:7860/api/mix")
 # Foydalanuvchi tanlagan variant (Variant 3)
 FINAL_CAPTION = (
     "✅ **Bajarildi!**\n\n"
-    "🎥 Klip yaratuvchi: **Sadoon AI Bot**\n"
-    "🔗 @sadoon_ai_bot\n\n"
-    "*Do'stlaringizga ham ulashing!* 📤"
+    "🎥 Klip yaratuvchi: Sadoon AI Bot\n"
+    "🔗 @sadoon\_ai\_bot\n\n"
+    "Do'stlaringizga ham ulashing! 📤"
 )
 
 session = AiohttpSession(timeout=60)
@@ -235,7 +235,7 @@ async def handle_shazam_direct(message: Message, state: FSMContext):
             shazam_text = (
                 f"🎵 **{track['title']}**\n👤 {track['subtitle']}\n\n"
                 f"🔗 [Shazam orqali ochish]({track['shazam_url']})\n\n"
-                f"🤖 Bot: @sadoon_ai_bot"
+                f"🤖 Bot: @sadoon\_ai\_bot"
             )
             await message.answer(shazam_text)
         else:
