@@ -22,13 +22,57 @@ def _extract_shortcode(url: str) -> str:
     match = re.search(r'/(reel|p|tv)/([A-Za-z0-9_-]+)', url)
     return match.group(2) if match else url.split("/")[-1]
 
+async def get_instagram_video_url_cobalt(url: str) -> str:
+    """Cobalt API orqali video URL olish (tez va barqaror)"""
+    # Bir nechta Cobalt API instansiyalarini sinab ko'rish
+    api_urls = [
+        "https://api.cobalt.tools/api/json",
+        "https://cobalt-api.kwiateusz.xyz/api/json"
+    ]
+    
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+    }
+    
+    data = {
+        "url": url,
+        "videoQuality": "720",
+        "downloadMode": "video"
+    }
+    
+    for api_url in api_urls:
+        try:
+            print(f"[*] Cobalt API sinab ko'rilmoqda: {api_url}")
+            response = requests.post(api_url, json=data, headers=headers, timeout=10)
+            if response.status_code == 200:
+                res_data = response.json()
+                if "url" in res_data:
+                    print(f"[+] Cobalt orqali topildi: {api_url}")
+                    return res_data["url"]
+                elif "status" in res_data and res_data["status"] == "redirect":
+                    return res_data["url"]
+            print(f"[-] Cobalt API xatosi ({api_url}): {response.status_code}")
+        except Exception as e:
+            print(f"[-] Cobalt API xatosi ({api_url}): {e}")
+            
+    return None
+
 async def get_instagram_video_url(url: str) -> str:
-    """Instagram embed sahifasi orqali video URL olish (login KERAK EMAS)"""
+    """Instagram video URL olish (Cobalt -> Playwright fallback)"""
+    # 1-usul: Cobalt API (Tavsiya etiladi - tez va eng barqaror)
+    video_url = await get_instagram_video_url_cobalt(url)
+    if video_url:
+        return video_url
+        
+    # 2-usul: Playwright (Zaxira - agar Cobalt ishlamasa)
+    print("[*] Cobalt ishlamadi, Playwright (Embed) sinab ko'rilmoqda...")
     shortcode = _extract_shortcode(url)
     embed_url = f"https://www.instagram.com/p/{shortcode}/embed/"
-    print(f"[*] Embed: {embed_url}")
     
     async with async_playwright() as p:
+        # Brauzer parametrlarini optimallashtiramiz
         browser = await p.chromium.launch(
             headless=True, 
             args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
@@ -40,13 +84,13 @@ async def get_instagram_video_url(url: str) -> str:
         page = await context.new_page()
         
         try:
-            # BOSQICH 1: Embed sahifani ochish (login KERAK EMAS)
+            # Embed sahifani ochish
             await page.goto(embed_url, timeout=30000, wait_until="domcontentloaded")
             
-            for attempt in range(4):
+            for attempt in range(3):
                 await page.wait_for_timeout(3000)
                 
-                # Video <video> tagdan src olish
+                # Video tagini qidirish
                 videos = await page.evaluate("""
                     () => {
                         const videos = document.querySelectorAll('video');
@@ -54,37 +98,25 @@ async def get_instagram_video_url(url: str) -> str:
                     }
                 """)
                 if videos:
-                    print(f"[+] Embed video topildi (attempt {attempt+1}): {videos[0][:80]}...")
+                    print(f"[+] Playwright (Embed) video topildi: {videos[0][:60]}...")
                     await browser.close()
                     return videos[0]
                 
-                # Play tugmasini bosishga urinish (embed videoni avtomatik o'ynamaydi)
+                # Agar video bo'lmasa, 'play' tugmasini bosib ko'rish
                 try:
-                    play_btn = page.locator('button, [role="button"], .EmbedVideo')
-                    if await play_btn.first.is_visible(timeout=1000):
-                        await play_btn.first.click()
+                    play_btn = page.locator('button, [role="button"], .EmbedVideo').first
+                    if await play_btn.is_visible(timeout=500):
+                        await play_btn.click()
                 except:
                     pass
-                    
-                print(f"[*] Embed attempt {attempt+1}/4: kutilmoqda...")
             
-            # BOSQICH 2: Embed ishlamasa, to'g'ridan-to'g'ri sahifani ochish
+            # Agar hali ham topilmasa, to'g'ridan-to'g'ri reel sahifasiga o'tamiz
             print("[*] Embed ishlamadi, direct page sinab ko'rilmoqda...")
             direct_url = f"https://www.instagram.com/reel/{shortcode}/"
             await page.goto(direct_url, timeout=30000, wait_until="domcontentloaded")
             
-            for attempt in range(3):
+            for attempt in range(2):
                 await page.wait_for_timeout(5000)
-                
-                # Popuplarni yopish
-                for sel in ['button:has-text("Not Now")', 'button:has-text("Decline")', '[aria-label="Close"]']:
-                    try:
-                        btn = page.locator(sel).first
-                        if await btn.is_visible(timeout=1000):
-                            await btn.click()
-                    except:
-                        pass
-                
                 videos = await page.evaluate("""
                     () => {
                         const videos = document.querySelectorAll('video');
@@ -92,22 +124,16 @@ async def get_instagram_video_url(url: str) -> str:
                     }
                 """)
                 if videos:
-                    print(f"[+] Direct video topildi: {videos[0][:80]}...")
+                    print(f"[+] Playwright (Direct) video topildi: {videos[0][:60]}...")
                     await browser.close()
                     return videos[0]
-            
-            # Debug
-            title = await page.title()
-            body = await page.evaluate("() => document.body?.innerText?.substring(0, 500) || 'empty'")
-            print(f"[-] FAIL: title={title}")
-            print(f"[-] FAIL: body={body[:300]}")
                 
         except Exception as e:
-            print(f"[-] Playwright xato: {e}")
+            print(f"[-] Playwright xatosi: {e}")
         
         await browser.close()
     
-    raise Exception("Video topilmadi. Link tekshiring yoki keyinroq urinib ko'ring.")
+    raise Exception("Video topilmadi. Linkni tekshiring yoki keyinroq urinib ko'ring.")
 
 async def download_audio(url: str, output_path: str):
     """Instagram video dan audio ajratib olish"""
