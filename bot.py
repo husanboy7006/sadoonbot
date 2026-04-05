@@ -178,7 +178,7 @@ async def handle_mix_link(message: Message, state: FSMContext):
                     video_path = f"output/{task_id}_final.mp4"
                     
                     if os.path.exists(video_path):
-                        await message.answer_video(video=FSInputFile(video_path), caption="Tayyor! 🎥")
+                        await message.answer_video(video=FSInputFile(video_path), caption="Tayyor! 🎥\n\n@sadoon_ai_bot")
                         # Faylni yuborgach o'chirib yuboramiz (serverda joy tejash uchun)
                         os.remove(video_path) 
                     else:
@@ -202,7 +202,7 @@ async def handle_download_direct(message: Message, state: FSMContext):
         await download_video(url, video_path)
         db.log_stats(message.from_user.id, "download")
         if os.path.exists(video_path):
-            await message.answer_video(video=FSInputFile(video_path), caption="Tayyor! 📥")
+            await message.answer_video(video=FSInputFile(video_path), caption="Tayyor! 📥\n\n@sadoon_ai_bot")
             os.remove(video_path)
     except Exception as e:
         await message.answer(f"❌ Xato: {str(e)}")
