@@ -44,7 +44,7 @@ main_keyboard = InlineKeyboardMarkup(inline_keyboard=[
         InlineKeyboardButton(text="🔍 Musiqani topish", callback_data="shazam_choice"),
         InlineKeyboardButton(text="✍️ Takliflar", callback_data="feedback_choice")
     ],
-    [InlineKeyboardButton(text="🌐 Sadoon AI Sayti", url="https://sadoonbot.vercel.app/")]
+    [InlineKeyboardButton(text="🌐 Sadoon AI Sayti", url="https://sadoon-ai.vercel.app/")]
 ])
 
 ADMIN_ID = 7110271171 
