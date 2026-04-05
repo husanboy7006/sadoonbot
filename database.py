@@ -19,6 +19,7 @@ def init_db():
     pass
 
 def add_user(user_id, username):
+    if not supabase: return
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
         supabase.table("users").upsert({
@@ -30,6 +31,7 @@ def add_user(user_id, username):
 
 def get_all_users():
     """Barcha foydalanuvchilar ID ro'yxatini qaytaradi (reklama yuborish uchun)"""
+    if not supabase: return []
     try:
         res = supabase.table("users").select("user_id").execute()
         return [row['user_id'] for row in res.data]
@@ -38,6 +40,7 @@ def get_all_users():
         return []
 
 def log_stats(user_id, service_type):
+    if not supabase: return
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
         supabase.table("stats").insert({
@@ -48,6 +51,9 @@ def log_stats(user_id, service_type):
     except: pass
 
 def get_stats_report():
+    if not supabase:
+        return "⚠️ Ma'lumotlar bazasi (Supabase) ulanmagan. Statistika mavjud emas."
+        
     today = datetime.now().strftime("%Y-%m-%d")
     try:
         # Jami foydalanuvchilar
