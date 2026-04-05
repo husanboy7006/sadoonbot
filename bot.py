@@ -16,6 +16,14 @@ from aiogram.client.default import DefaultBotProperties
 TOKEN = "8727075082:AAEQrVaA_S-D6wHy1URANE2NgLVMs5d7yXw" 
 API_URL = os.getenv("API_URL", "http://127.0.0.1:7860/api/mix")
 
+# Foydalanuvchi tanlagan variant (Variant 3)
+FINAL_CAPTION = (
+    "✅ **Bajarildi!**\n\n"
+    "🎥 Klip yaratuvchi: **Sadoon AI Bot**\n"
+    "🔗 @sadoon_ai_bot\n\n"
+    "*Do'stlaringizga ham ulashing!* 📤"
+)
+
 session = AiohttpSession(timeout=60)
 bot = Bot(token=TOKEN, session=session, default=DefaultBotProperties(parse_mode='Markdown'))
 dp = Dispatcher()
@@ -178,7 +186,7 @@ async def handle_mix_link(message: Message, state: FSMContext):
                     video_path = f"output/{task_id}_final.mp4"
                     
                     if os.path.exists(video_path):
-                        await message.answer_video(video=FSInputFile(video_path), caption="Tayyor! 🎥\n\n@sadoon_ai_bot")
+                        await message.answer_video(video=FSInputFile(video_path), caption=FINAL_CAPTION)
                         # Faylni yuborgach o'chirib yuboramiz (serverda joy tejash uchun)
                         os.remove(video_path) 
                     else:
@@ -202,7 +210,7 @@ async def handle_download_direct(message: Message, state: FSMContext):
         await download_video(url, video_path)
         db.log_stats(message.from_user.id, "download")
         if os.path.exists(video_path):
-            await message.answer_video(video=FSInputFile(video_path), caption="Tayyor! 📥\n\n@sadoon_ai_bot")
+            await message.answer_video(video=FSInputFile(video_path), caption=FINAL_CAPTION)
             os.remove(video_path)
     except Exception as e:
         await message.answer(f"❌ Xato: {str(e)}")
@@ -224,7 +232,12 @@ async def handle_shazam_direct(message: Message, state: FSMContext):
         track = await identify_music(temp_path)
         db.log_stats(message.from_user.id, "shazam")
         if track:
-            await message.answer(f"🎵 **{track['title']}**\n👤 {track['subtitle']}\n\n🔗 [Shazam]({track['shazam_url']})")
+            shazam_text = (
+                f"🎵 **{track['title']}**\n👤 {track['subtitle']}\n\n"
+                f"🔗 [Shazam orqali ochish]({track['shazam_url']})\n\n"
+                f"🤖 Bot: @sadoon_ai_bot"
+            )
+            await message.answer(shazam_text)
         else:
             await message.answer("❌ Topilmadi.")
         if os.path.exists(temp_path): os.remove(temp_path)
