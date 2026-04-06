@@ -163,9 +163,9 @@ async def download_audio(url: str, output_path: str):
             'extractor_args': {'youtube': {'player_client': ['android', 'ios']}}
         }
         
-        # YouTube uchun cookie-lar bilan harakat qilish
-        if "youtube.com" in url or "youtu.be" in url:
-            ydl_opts['referer'] = 'https://www.youtube.com/'
+        # YouTube va Instagram uchun cookie-lar bilan harakat qilish
+        if any(domain in url for domain in ["youtube.com", "youtu.be", "instagram.com"]):
+            ydl_opts['referer'] = 'https://www.youtube.com/' if "youtu" in url else 'https://www.instagram.com/'
             cookie_path = os.path.join(os.getcwd(), "cookies.txt")
             if os.path.exists(cookie_path):
                 print(f"[*] DEBUG: cookies.txt topildi ({os.path.getsize(cookie_path)} bytes)")
@@ -174,6 +174,9 @@ async def download_audio(url: str, output_path: str):
                 print("[!] DEBUG: cookies.txt TOPILMADI!")
                 # Brauzerdan cookie-larni olish (faqat local Windows uchun foydali)
                 ydl_opts['cookiesfrombrowser'] = ('chrome', 'edge', 'firefox', 'opera', 'brave')
+
+        if "youtube.com" in url or "youtu.be" in url:
+            ydl_opts['extractor_args'] = {'youtube': {'player_client': ['android', 'ios']}}
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
@@ -205,7 +208,33 @@ async def download_video(url: str, output_path: str):
         except:
             pass
 
-    # 2-yo'l: yt-dlp
+    # 2-yo'l: Invidious API (YouTube uchun muqobil)
+    if "youtube.com" in url or "youtu.be" in url:
+        try:
+            print("[*] Invidious API orqali video yuklanmoqda...")
+            video_id = ""
+            if "watch?v=" in url: video_id = url.split("watch?v=")[1].split("&")[0]
+            elif "youtu.be/" in url: video_id = url.split("youtu.be/")[1].split("?")[0]
+            
+            invidious_mirrors = ["https://invidious.poast.org", "https://yewtu.be", "https://iv.ggtyler.dev"]
+            for mirror in invidious_mirrors:
+                try:
+                    res = requests.get(f"{mirror}/api/v1/videos/{video_id}", timeout=15).json()
+                    if "formatStreams" in res:
+                        # 720p yoki eng yaxshi formatni qidiramiz
+                        video_stream = next((f for f in res["formatStreams"] if "720p" in f["qualityLabel"] or "360p" in f["qualityLabel"]), res["formatStreams"][0])
+                        if video_stream:
+                            stream_url = video_stream["url"]
+                            r = requests.get(stream_url, stream=True, timeout=120)
+                            with open(output_path, 'wb') as f:
+                                for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
+                            print(f"[+] YouTube video Invidious ({mirror}) orqali yuklandi.")
+                            return True
+                except: continue
+        except Exception as e:
+            print(f"[-] Invidious video error: {e}")
+
+    # 3-yo'l: yt-dlp
     try:
         import yt_dlp
         ydl_opts = {
@@ -217,9 +246,9 @@ async def download_video(url: str, output_path: str):
             'nocheckcertificate': True
         }
 
-        # YouTube uchun cookie-lar bilan harakat qilish
-        if "youtube.com" in url or "youtu.be" in url:
-            ydl_opts['referer'] = 'https://www.youtube.com/'
+        # YouTube va Instagram uchun cookie-lar bilan harakat qilish
+        if any(domain in url for domain in ["youtube.com", "youtu.be", "instagram.com"]):
+            ydl_opts['referer'] = 'https://www.youtube.com/' if "youtu" in url else 'https://www.instagram.com/'
             cookie_path = os.path.join(os.getcwd(), "cookies.txt")
             if os.path.exists(cookie_path):
                 print(f"[*] DEBUG: cookies.txt topildi ({os.path.getsize(cookie_path)} bytes)")
@@ -228,6 +257,9 @@ async def download_video(url: str, output_path: str):
                 print("[!] DEBUG: cookies.txt TOPILMADI!")
                 # Brauzerdan cookie-larni olish
                 ydl_opts['cookiesfrombrowser'] = ('chrome', 'edge', 'firefox', 'opera', 'brave')
+
+        if "youtube.com" in url or "youtu.be" in url:
+            ydl_opts['extractor_args'] = {'youtube': {'player_client': ['android', 'ios']}}
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
