@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, BackgroundTasks
+from fastapi import FastAPI, Request, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -19,50 +19,63 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Fayllarni yuklab olish uchun URL (Static files)
-# HF da filelar /app/output yoki /app/temp dagi fayllarni ko'ra oladi
+# Papkalarni tekshirish
 if not os.path.exists("output"): os.makedirs("output")
+if not os.path.exists("temp"): os.makedirs("temp")
 app.mount("/output", StaticFiles(directory="output"), name="output")
 
 class MixRequest(BaseModel):
     url: str
-    type: str = "download" # 'download' or 'shazam' or 'mix'
     image_url: str = None
 
 @app.get("/")
 def read_root():
     return {"status": "Sadoon API and Bot are running"}
 
+# 1. Download Video Endpoint (GET or POST based on Vercel script)
+@app.get("/api/download-video")
+async def api_download_video(url: str = Query(...)):
+    uid = str(uuid.uuid4())[:8]
+    output_file = f"output/video_{uid}.mp4"
+    print(f"[*] API Download: {url[:30]}")
+    try:
+        success = await mixer.download_video(url, output_file)
+        if success:
+            return {"status": "success", "download_url": f"/output/video_{uid}.mp4"}
+        return {"status": "error", "message": "Video yuklab bo'lmadi"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+# 2. Mix Endpoint (POST)
 @app.post("/api/mix")
 async def api_mix(req: MixRequest):
-    """Vercel saytidan keladigan yuklash va mix qilish so'rovlari uchun"""
-    url = req.url
-    type = req.type
     uid = str(uuid.uuid4())[:8]
-    
-    print(f"[*] API so'rov: {type} -> {url[:30]}...")
-
+    url = req.url
+    print(f"[*] API Mix: {url[:30]}")
+    # Hozircha mix funksiyasi soddalashtirilgan (faqat downloader kabi ishlaydi yoki mix qiladi)
+    # Agar frontend faqat buni ishlatsa, shuni qaytaramiz
+    output_file = f"output/mix_{uid}.mp4"
     try:
-        if type == "download":
-            # Oddiy video yuklash
-            output_file = f"output/video_{uid}.mp4"
-            success = await mixer.download_video(url, output_file)
-            if success:
-                # HF dagi to'g'ridan to'g'ri link (HF Space URL ga asoslanadi)
-                # Space nomini dinamik bilish qiyin, lekin relative path ishlaydi
-                download_url = f"/output/video_{uid}.mp4"
-                return {"status": "success", "download_url": download_url}
-        
-        elif type == "shazam":
-            # Shazam orqali aniqlash
-            temp_audio = f"temp/audio_{uid}.mp3"
-            success = await mixer.download_audio(url, temp_audio)
-            if success:
-                info = await mixer.identify_music(temp_audio)
-                if os.path.exists(temp_audio): os.remove(temp_audio)
-                return {"status": "success", "shazam": info}
-        
-        return {"status": "error", "message": "Noma'lum tur yoki yuklab bo'lmadi"}
+        success = await mixer.download_video(url, output_file)
+        if success:
+            return {"status": "success", "download_url": f"/output/mix_{uid}.mp4"}
+        return {"status": "error", "message": "Mix qilib bo'lmadi"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+# 3. Shazam Endpoint (GET)
+@app.get("/api/shazam")
+async def api_shazam(url: str = Query(...)):
+    uid = str(uuid.uuid4())[:8]
+    temp_audio = f"temp/shazam_{uid}.mp3"
+    print(f"[*] API Shazam: {url[:30]}")
+    try:
+        success = await mixer.download_audio(url, temp_audio)
+        if success:
+            info = await mixer.identify_music(temp_audio)
+            if os.path.exists(temp_audio): os.remove(temp_audio)
+            return {"status": "success", "shazam": info}
+        return {"status": "error", "message": "Musiqa aniqlab bo'lmadi"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
