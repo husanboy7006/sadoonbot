@@ -546,7 +546,7 @@ async def handle_shazam_direct(message: Message, state: FSMContext):
             shazam_text = (
                 f"🎵 **{track['title']}**\n👤 {track['subtitle']}\n\n"
                 f"🔗 [Shazam orqali ochish]({track['shazam_url']})\n\n"
-                f"⏳ Musiqa fayli yuklanmoqda..."
+                f"⏳ Musiqa fayli qidirilmoqda..."
             )
             shz_msg = await message.answer(shazam_text)
             
@@ -562,10 +562,15 @@ async def handle_shazam_direct(message: Message, state: FSMContext):
                     caption=f"🎵 {track['title']}\n🤖 @sadoon_ai_bot"
                 )
                 os.remove(mp3_path)
+                # Success - update message to remove "searching..."
+                final_text = (
+                    f"🎵 **{track['title']}**\n👤 {track['subtitle']}\n\n"
+                    f"🔗 [Shazam orqali ochish]({track['shazam_url']})\n\n"
+                    f"✅ Musiqa yuborildi!"
+                )
+                await shz_msg.edit_text(final_text)
             else:
-                await message.answer("❌ Afsuski, musiqa faylini topib bo'lmadi.")
-            
-            await shz_msg.delete()
+                await shz_msg.edit_text(f"🎵 **{track['title']}**\n👤 {track['subtitle']}\n\n❌ Afsuski, musiqa faylini topib bo'lmadi.")
         else:
             await message.answer("❌ Musiqani aniqlab bo'lmadi.")
 

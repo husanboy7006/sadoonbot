@@ -111,25 +111,53 @@ async def download_video(url: str, output_path: str):
     return await yt_dlp_download(url, output_path, is_audio=False)
 
 async def search_and_download_music(query: str, output_path: str):
-    """Musiqa nomiga ko'ra YouTube dan qidirib yuklash"""
-    print(f"[*] Musiqa qidirilmoqda: {query}")
+    """Musiqa nomiga ko'ra Invidious/YouTube dan qidirib yuklash"""
+    print(f"[*] Musiqa qidirilmoqda (Invidious Search): {query}")
+    instances = ["https://yewtu.be", "https://invidious.projectsegfau.lt", "https://iv.ggtyler.dev"]
+    v_id = None
+    for inst in instances:
+        try:
+            r = requests.get(f"{inst}/api/v1/search", params={"q": query, "type": "video"}, timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                if data and len(data) > 0:
+                    v_id = data[0]["videoId"]
+                    break
+        except: pass
+    
+    if v_id:
+        print(f"[+] Musiqa ID topildi: {v_id}. Yuklanmoqda...")
+        # Direct link or yt-dlp
+        url = f"https://www.youtube.com/watch?v={v_id}"
+        # Invidious or Cobalt for higher success
+        for inst in instances:
+            try:
+                r = requests.get(f"{inst}/api/v1/videos/{v_id}", timeout=10)
+                if r.status_code == 200:
+                    s_data = r.json()
+                    if "formatStreams" in s_data and s_data["formatStreams"]:
+                        v_url = s_data["formatStreams"][-1]["url"]
+                        if await download_directly(v_url, output_path + ".temp.mp4"):
+                            AudioSegment.from_file(output_path + ".temp.mp4").export(output_path, format="mp3", bitrate="192k")
+                            os.remove(output_path + ".temp.mp4")
+                            return True
+            except: pass
+        
+        # Fallback to general downloader
+        return await download_audio(url, output_path)
+
+    # Very last resort: yt-dlp search
     try:
         import yt_dlp
         ydl_opts = {
-            'format': 'bestaudio/best',
-            'outtmpl': output_path.replace('.mp3', ''),
-            'ffmpeg_location': ffmpeg_binary,
-            'default_search': 'ytsearch1',
-            'quiet': True,
-            'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
+            'format': 'bestaudio/best', 'outtmpl': output_path.replace('.mp3', ''), 'ffmpeg_location': ffmpeg_binary,
+            'default_search': 'ytsearch1', 'quiet': True, 'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
         }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([f"ytsearch1:{query}"])
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl: ydl.download([f"ytsearch1:{query}"])
         if os.path.exists(output_path + ".mp3"):
             os.rename(output_path + ".mp3", output_path)
             return True
-    except Exception as e:
-        print(f"[-] Music Search Error: {e}")
+    except: pass
     return False
 
 async def yt_dlp_download(url, output_path, is_audio=False):
@@ -149,7 +177,7 @@ async def yt_dlp_download(url, output_path, is_audio=False):
 
 async def download_directly(url, path):
     try:
-        headers = {"User-Agent": "Mozilla/5.0"}
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
         r = requests.get(url, stream=True, timeout=60, verify=False, headers=headers)
         with open(path, 'wb') as f:
             for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
