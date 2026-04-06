@@ -118,7 +118,33 @@ async def download_audio(url: str, output_path: str):
         except Exception as e:
             print(f"[-] TikWM error: {e}")
 
-    # 3-yo'l: yt-dlp fallback
+    # 3-yo'l: Invidious API (YouTube uchun muqobil)
+    if "youtube.com" in url or "youtu.be" in url:
+        try:
+            print("[*] Invidious API orqali yuklanmoqda...")
+            video_id = ""
+            if "watch?v=" in url: video_id = url.split("watch?v=")[1].split("&")[0]
+            elif "youtu.be/" in url: video_id = url.split("youtu.be/")[1].split("?")[0]
+            
+            invidious_mirrors = ["https://invidious.poast.org", "https://yewtu.be", "https://iv.ggtyler.dev"]
+            for mirror in invidious_mirrors:
+                try:
+                    res = requests.get(f"{mirror}/api/v1/videos/{video_id}", timeout=15).json()
+                    if "adaptiveFormats" in res:
+                        # Faqat audio qismini qidiramiz
+                        audio_stream = next((f for f in res["adaptiveFormats"] if "audio" in f["type"]), None)
+                        if audio_stream:
+                            stream_url = audio_stream["url"]
+                            r = requests.get(stream_url, stream=True, timeout=60)
+                            with open(output_path, 'wb') as f:
+                                for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
+                            print(f"[+] YouTube audio Invidious ({mirror}) orqali yuklandi.")
+                            return True
+                except: continue
+        except Exception as e:
+            print(f"[-] Invidious error: {e}")
+
+    # 4-yo'l: yt-dlp fallback
     try:
         import yt_dlp
         ydl_opts = {
