@@ -37,9 +37,9 @@ async def get_cobalt_url(url: str, mode: str = "video") -> str:
     """Cobalt API orqali media URL olish (mode: 'video' yoki 'audio')"""
     api_urls = [
         "https://api.cobalt.tools/api/json",
-        "https://cobalt.qwer.zip/api/json",
+        "https://cobalt.lonely-dev.xyz/api/json",
         "https://cobalt-api.kwiateusz.xyz/api/json",
-        "https://cobalt.lonely-dev.xyz/api/json"
+        "https://cobalt.qwer.zip/api/json"
     ]
     
     headers = {
@@ -132,7 +132,9 @@ async def download_audio(url: str, output_path: str):
             'ffmpeg_location': ffmpeg_binary,
             'quiet': True,
             'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-            'nocheckcertificate': True
+            'nocheckcertificate': True,
+            'no_warnings': True,
+            'extractor_args': {'youtube': {'player_client': ['android', 'ios']}}
         }
         
         # YouTube uchun cookie-lar bilan harakat qilish
