@@ -3,12 +3,17 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Serverga ffmpeg, nodejs va Playwright uchun kerakli paketlarni o'rnatamiz
-RUN apt-get update && apt-get install -y ffmpeg wget gnupg2 nodejs \
+RUN apt-get update && apt-get install -y ffmpeg wget gnupg2 curl \
     libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
     libcups2 libdrm2 libxkbcommon0 libxcomposite1 \
     libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 \
     libcairo2 libasound2 libatspi2.0-0 libxshmfence1 \
     && rm -rf /var/lib/apt/lists/*
+
+# Deno o'rnatish (yt-dlp YouTube uchun so'ragan)
+RUN curl -fsSL https://deno.land/install.sh | sh
+ENV DENO_INSTALL="/root/.deno"
+ENV PATH="$DENO_INSTALL/bin:$PATH"
 
 # Kutubxonalarni o'rnatish
 COPY requirements.txt .

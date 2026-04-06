@@ -5,6 +5,7 @@ import sys
 import subprocess
 import shutil
 import asyncio
+import json
 from pydub import AudioSegment
 from shazamio import Shazam
 from playwright.async_api import async_playwright
@@ -62,7 +63,7 @@ async def scrape_instagram(url: str):
     return None
 
 async def scrape_youtube(url: str):
-    """yt5s orqali YouTube videosini scraping qilish"""
+    """y2mate.is (va boshqalar) orqali YouTube videosini scraping qilish"""
     print(f"[*] YouTube Scraping boshlandi: {url[:30]}...")
     async with async_playwright() as p:
         try:
@@ -71,26 +72,45 @@ async def scrape_youtube(url: str):
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             )
             page = await context.new_page()
-            # yt5s.io yoki boshqalar orqali
-            await page.goto("https://yt5s.biz/en/", timeout=60000)
-            await page.fill("input#s_input", url)
-            await page.click("button.btn-red")
-            
+            # y2mate.nu yoki boshqalar orqali (SSL xatosini chetlab o'tish uchun bir nechta sinab ko'ramiz)
             try:
-                await page.wait_for_selector("div#search-result", timeout=20000)
-                # "Get Link" tugmasini bosish
-                await page.click("button#btn-action")
-                await page.wait_for_selector("a.btn-success", timeout=20000)
-                download_btn = await page.query_selector("a.btn-success")
-                if download_btn:
-                    video_url = await download_btn.get_attribute("href")
-                    if video_url and video_url.startswith("http"):
-                        return video_url
+                await page.goto("https://y2mate.nu/en117/", timeout=60000)
+                await page.fill("input#url", url)
+                await page.keyboard.press("Enter")
+                await page.wait_for_selector("a#download-btn", timeout=20000)
+                video_url = await (await page.query_selector("a#download-btn")).get_attribute("href")
+                if video_url and video_url.startswith("http"):
+                    return video_url
             except:
                 pass
+                
             await browser.close()
         except Exception as e:
             print(f"[-] YouTube Scraper error: {e}")
+    return None
+
+async def get_invidious_url(url: str):
+    """Invidious API orqali YouTube stream olish (Alternativ yo'l)"""
+    v_id = None
+    if "youtu.be" in url:
+        v_id = url.split("/")[-1].split("?")[0]
+    else:
+        match = re.search(r"v=([A-Za-z0-9_-]+)", url)
+        if match: v_id = match.group(1)
+        else: v_id = url.split("/")[-1].split("?")[0]
+        
+    if not v_id: return None
+    
+    instances = ["https://yewtu.be", "https://invidious.snopyta.org", "https://inv.riverside.rocks"]
+    for inst in instances:
+        try:
+            r = requests.get(f"{inst}/api/v1/videos/{v_id}", timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                if "formatStreams" in data:
+                    # Eng sifatli streamni olamiz
+                    return data["formatStreams"][-1]["url"]
+        except: pass
     return None
 
 async def download_audio(url: str, output_path: str):
@@ -102,18 +122,21 @@ async def download_audio(url: str, output_path: str):
     if "instagram.com" in url:
         video_url = await scrape_instagram(url)
     elif "youtube.com" in url or "youtu.be" in url:
-        video_url = await scrape_youtube(url)
+        # Avval Invidious sinab ko'ramiz (Tezroq)
+        video_url = await get_invidious_url(url)
+        if not video_url:
+            video_url = await scrape_youtube(url)
         
     if video_url:
         try:
-            r = requests.get(video_url, stream=True, timeout=60)
+            r = requests.get(video_url, stream=True, timeout=60, verify=False) # Boshqa SSL xatolar uchun verify=False
             temp_vid = output_path + ".temp.mp4"
             with open(temp_vid, 'wb') as f:
                 for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
             audio = AudioSegment.from_file(temp_vid)
             audio.export(output_path, format="mp3", bitrate="192k")
             os.remove(temp_vid)
-            print("[+] Audio Scraper orqali yuklandi.")
+            print("[+] Audio Scraper via Invidious/y2mate orqali yuklandi.")
             return True
         except:
             pass
@@ -162,14 +185,16 @@ async def download_video(url: str, output_path: str):
     if "instagram.com" in url:
         video_url = await scrape_instagram(url)
     elif "youtube.com" in url or "youtu.be" in url:
-        video_url = await scrape_youtube(url)
+        video_url = await get_invidious_url(url)
+        if not video_url:
+            video_url = await scrape_youtube(url)
         
     if video_url:
         try:
-            r = requests.get(video_url, stream=True, timeout=60)
+            r = requests.get(video_url, stream=True, timeout=60, verify=False)
             with open(output_path, 'wb') as f:
                 for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
-            print("[+] Video Scraper orqali yuklandi.")
+            print("[+] Video Scraper/Invidious orqali yuklandi.")
             return True
         except:
             pass
