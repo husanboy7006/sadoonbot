@@ -1,7 +1,8 @@
-from fastapi import FastAPI, Request, Query
+from fastapi import FastAPI, Request, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from typing import Optional
 import uvicorn
 import mixer
 import os
@@ -9,7 +10,6 @@ import uuid
 
 app = FastAPI()
 
-# CORS sozlamalari - barcha turdagi so'rovlar uchun ochiq
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,70 +18,76 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Papkalarni tekshirish
 if not os.path.exists("output"): os.makedirs("output")
 if not os.path.exists("temp"): os.makedirs("temp")
-
-# Relative URL emas, Full URL qaytarish uchun Space manzilini aniqlaymiz
-# Hugging Face da bu odatda 'https://user-space.hf.space' ko'rinishida bo'ladi
-BASE_URL = "https://husanjon007-sadoon-api.hf.space"
-
-# Static fayllarni ulash
 app.mount("/output", StaticFiles(directory="output"), name="output")
+
+BASE_URL = "https://husanjon007-sadoon-api.hf.space"
 
 class MixRequest(BaseModel):
     url: str
-    image_url: str = None
+    image_url: Optional[str] = None
 
 @app.get("/")
 async def read_root():
-    return {"status": "Sadoon API and Bot are running", "cors": "enabled"}
+    return {"status": "Sadoon API and Bot are running"}
 
-# 1. Download Video (Frontend 'download-video' deb so'raydi)
-@app.get("/api/download-video")
-async def api_download_video(url: str = Query(...)):
+# Vercel sayti POST yuboryapti, shuning uchun barchasini POST qilamiz
+# FormData va JSON ikkalasini ham qo'llab-quvvatlaymiz
+
+@app.post("/api/download-video")
+async def api_download_video(request: Request, url: Optional[str] = Form(None)):
+    # Agar FormData bo'lmasa, JSON dan qidiramiz
+    if url is None:
+        try:
+            data = await request.json()
+            url = data.get("url")
+        except: pass
+    
+    if not url:
+        return {"status": "error", "message": "URL topilmadi"}
+
     uid = str(uuid.uuid4())[:8]
     output_file = f"output/vid_{uid}.mp4"
-    print(f"[*] GET Download request for: {url[:30]}")
+    print(f"[*] API Download (POST): {url[:30]}")
     try:
         success = await mixer.download_video(url, output_file)
         if success:
-            return {
-                "status": "success", 
-                "message": "Tayyor!", 
-                "download_url": f"{BASE_URL}/output/vid_{uid}.mp4"
-            }
-        return {"status": "error", "message": "Yuklab bo'lmadi (Scraper error)"}
+            return {"status": "success", "message": "Tayyor!", "download_url": f"{BASE_URL}/output/vid_{uid}.mp4"}
+        return {"status": "error", "message": "Video yuklab bo'lmadi (Bloklangan bo'lishi mumkin)"}
     except Exception as e:
-        print(f"[-] API Error: {e}")
         return {"status": "error", "message": str(e)}
 
-# 2. Mix (Frontend POST orqali yuboradi)
 @app.post("/api/mix")
-async def api_mix(req: MixRequest):
+async def api_mix(request: Request, url: Optional[str] = Form(None)):
+    if url is None:
+        try:
+            data = await request.json()
+            url = data.get("url")
+        except: pass
+        
     uid = str(uuid.uuid4())[:8]
-    url = req.url
-    print(f"[*] POST Mix request for: {url[:30]}")
     output_file = f"output/mix_{uid}.mp4"
+    print(f"[*] API Mix (POST): {url[:30]}")
     try:
-        # Hozircha mix o'rniga oddiy yuklab qaytaramiz (Frontend kutayotganidek)
         success = await mixer.download_video(url, output_file)
         if success:
-            return {
-                "status": "success", 
-                "message": "Tayyor!", 
-                "download_url": f"{BASE_URL}/output/mix_{uid}.mp4"
-            }
-        return {"status": "error", "message": "Bazadan xatolik qaytdi"}
+            return {"status": "success", "message": "Mix tayyor!", "download_url": f"{BASE_URL}/output/mix_{uid}.mp4"}
+        return {"status": "error", "message": "Mix xatoligi"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-# 3. Shazam (Frontend GET orqali so'raydi)
-@app.get("/api/shazam")
-async def api_shazam(url: str = Query(...)):
+@app.post("/api/shazam")
+async def api_shazam(request: Request, url: Optional[str] = Form(None)):
+    if url is None:
+        try:
+            data = await request.json()
+            url = data.get("url")
+        except: pass
+
     uid = str(uuid.uuid4())[:8]
     temp_audio = f"temp/shz_{uid}.mp3"
-    print(f"[*] GET Shazam request for: {url[:30]}")
+    print(f"[*] API Shazam (POST): {url[:30]}")
     try:
         success = await mixer.download_audio(url, temp_audio)
         if success:
