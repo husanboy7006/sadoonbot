@@ -13,23 +13,34 @@ from pydub import AudioSegment
 from shazamio import Shazam
 from playwright.async_api import async_playwright
 
-# [UNIVERSAL DNS PATCH] - Hugging Face dagi DNS muammolarini hal qilish
+# [UNIVERSAL DNS PATCH] - Recursion-safe version
 ctx = ssl._create_unverified_context()
 old_getaddrinfo = socket.getaddrinfo
 dns_cache = {}
+in_dns_lookup = False
+
+def is_ip(host):
+    return re.match(r"^\d{1,3}(\.\d{1,3}){3}$", host) is not None
 
 def new_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
-    if host in ["127.0.0.1", "localhost", "0.0.0.0", "api.telegram.org"]:
-        if host == "api.telegram.org":
-            return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', ('149.154.167.220', port))]
+    global in_dns_lookup
+    
+    # 1. IP manzil bo'lsa yoki maxsus manzillar bo'lsa originalni qaytaramiz (Recursion oldini olish)
+    if in_dns_lookup or is_ip(host) or host in ["localhost", "127.0.0.1", "0.0.0.0"]:
         return old_getaddrinfo(host, port, family, type, proto, flags)
     
-    if host in dns_cache:
-        ip = dns_cache[host]
-        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', (ip, port))]
+    # 2. Telegram API uchun qat'iy IP (DNS ga bormasdan)
+    if host == "api.telegram.org":
+        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', ('149.154.167.220', port))]
     
+    # 3. Keshdan tekshirish
+    if host in dns_cache:
+        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', (dns_cache[host], port))]
+    
+    # 4. Cloudflare DNS-over-HTTPS orqali IP ni aniqlash
     try:
-        # Cloudflare DNS-over-HTTPS orqali IP ni aniqlash
+        in_dns_lookup = True
+        # DoH so'rovi (IP 1.1.1.1 ga to'g'ridan to'g'ri boradi, cheksiz siklni oldini oladi)
         url = f"https://1.1.1.1/dns-query?name={host}&type=A"
         req = urllib.request.Request(url, headers={'accept': 'application/dns-json'})
         with urllib.request.urlopen(req, timeout=5, context=ctx) as response:
@@ -42,6 +53,8 @@ def new_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
                         return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', (ip, port))]
     except:
         pass
+    finally:
+        in_dns_lookup = False
     
     return old_getaddrinfo(host, port, family, type, proto, flags)
 
@@ -86,14 +99,13 @@ async def scrape_instagram(url: str):
     return None
 
 async def scrape_youtube(url: str):
-    """SaveFrom (ssyoutube) orqali YouTube scraping qilish"""
-    print(f"[*] YouTube Scraping (ssyoutube): {url[:30]}...")
+    """YouTube scraping qilish (ssyoutube / yt1s)"""
+    print(f"[*] YouTube Scraping: {url[:30]}...")
     async with async_playwright() as p:
         try:
             browser = await p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox'])
             context = await browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
             page = await context.new_page()
-            # Alternativ YouTube scraperlar
             sites = ["https://en.savefrom.net/1-youtube-video-downloader-524.html", "https://yt1s.com.co/en1/"]
             for site in sites:
                 try:
@@ -133,7 +145,6 @@ async def get_invidious_url(url: str):
             else: v_id = url.split("/")[-1].split("?")[0]
     if not v_id: return None
     
-    # Static IP bo'lishi mumkin bo'lgan Invidiouslar
     instances = ["https://yewtu.be", "https://invidious.projectsegfau.lt", "https://iv.ggtyler.dev", "https://invidious.flokinet.to"]
     for inst in instances:
         try:
@@ -200,19 +211,14 @@ async def yt_dlp_download(url, output_path, is_audio=False):
             'extractor_args': {'youtube': {'player_clients': ['ios', 'android', 'web_embedded']}}
         }
         if is_audio: ydl_opts['postprocessors'] = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
-        # Youtube uchun cookies xatoligi bo'lishi mumkin, lekin Instagram cookies ishlashi mumkin
         if os.path.exists("cookies.txt"): ydl_opts['cookiefile'] = 'cookies.txt'
-        
         with yt_dlp.YoutubeDL(ydl_opts) as ydl: ydl.download([url])
         if is_audio and os.path.exists(output_path + ".mp3"): os.rename(output_path + ".mp3", output_path)
         return True
-    except Exception as e:
-        print(f"[-] yt-dlp error: {e}")
-        return False
+    except: return False
 
 async def download_directly(url, path):
     try:
-        # User-Agent muhim
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
         r = requests.get(url, stream=True, timeout=60, verify=False, headers=headers)
         with open(path, 'wb') as f:
@@ -224,12 +230,11 @@ async def get_cobalt_url_custom(url, api_url, mode):
     headers = {"Accept": "application/json", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
     data = {"url": url, "videoQuality": "720", "downloadMode": mode, "audioFormat": "mp3"}
     try:
-        print(f"[*] Cobalt Mirror: {api_url}")
         r = requests.post(api_url, json=data, headers=headers, timeout=10)
         if r.status_code == 200:
             res = r.json()
             if "url" in res: return res["url"]
-    except Exception as e: print(f"[-] Cobalt error ({api_url}): {e}")
+    except: pass
     return None
 
 def mix_image_audio(image_path: str, audio_path: str, output_path: str):
