@@ -13,7 +13,7 @@ from pydub import AudioSegment
 from shazamio import Shazam
 from playwright.async_api import async_playwright
 
-# [UNIVERSAL DNS PATCH] - Hugging Face dagi DNS muammolarini (NameResolutionError) hal qilish
+# [UNIVERSAL DNS PATCH] - Hugging Face dagi DNS muammolarini hal qilish
 ctx = ssl._create_unverified_context()
 old_getaddrinfo = socket.getaddrinfo
 dns_cache = {}
@@ -55,7 +55,6 @@ elif shutil.which("ffmpeg"): ffmpeg_binary = shutil.which("ffmpeg")
 AudioSegment.converter = ffmpeg_binary
 
 async def scrape_instagram(url: str):
-    """Instagram (SnapInsta) Scraper"""
     print(f"[*] Instagram Scraping: {url[:30]}...")
     async with async_playwright() as p:
         try:
@@ -71,62 +70,67 @@ async def scrape_instagram(url: str):
                 if download_btn: return await download_btn.get_attribute("href")
             except: pass
             await browser.close()
-        except Exception as e: print(f"[-] Instagram Scraper error: {e}")
+        except: pass
     return None
 
 async def download_tiktok_tikwm(url: str):
-    """TikTok (TikWM) Downloader - 100% stable"""
     try:
-        print(f"[*] TikTok (TikWM): {url[:30]}...")
         r = requests.post("https://www.tikwm.com/api/", data={'url': url}, timeout=15).json()
-        if r.get('code') == 0:
-            return "https://www.tikwm.com" + r['data']['play']
+        if r.get('code') == 0: return "https://www.tikwm.com" + r['data']['play']
     except: pass
     return None
 
 async def download_audio(url: str, output_path: str):
-    print(f"[*] Audio yuklanmoqda: {url[:30]}...")
-    # TikTok
     if "tiktok.com" in url:
         v_url = await download_tiktok_tikwm(url)
         if v_url and await download_directly(v_url, output_path + ".temp.mp4"):
             AudioSegment.from_file(output_path + ".temp.mp4").export(output_path, format="mp3", bitrate="192k")
             os.remove(output_path + ".temp.mp4")
             return True
-    
-    # Instagram
     if "instagram.com" in url:
         v_url = await scrape_instagram(url)
         if v_url and await download_directly(v_url, output_path + ".temp.mp4"):
             AudioSegment.from_file(output_path + ".temp.mp4").export(output_path, format="mp3", bitrate="192k")
             os.remove(output_path + ".temp.mp4")
             return True
-
-    # Cobalt mirrors
     for mirror in ["https://api.cobalt.tools/api/json", "https://cobalt-api.kwiateusz.xyz/api/json", "https://co.wuk.sh/api/json"]:
         a_url = await get_cobalt_url_custom(url, mirror, "audio")
         if a_url and await download_directly(a_url, output_path): return True
-
     return await yt_dlp_download(url, output_path, is_audio=True)
 
 async def download_video(url: str, output_path: str):
-    print(f"[*] Video yuklanmoqda: {url[:30]}...")
-    # TikTok
     if "tiktok.com" in url:
         v_url = await download_tiktok_tikwm(url)
         if v_url and await download_directly(v_url, output_path): return True
-
-    # Instagram
     if "instagram.com" in url:
         v_url = await scrape_instagram(url)
         if v_url and await download_directly(v_url, output_path): return True
-
-    # Cobalt
     for mirror in ["https://api.cobalt.tools/api/json", "https://cobalt-api.kwiateusz.xyz/api/json", "https://co.wuk.sh/api/json"]:
         v_url = await get_cobalt_url_custom(url, mirror, "video")
         if v_url and await download_directly(v_url, output_path): return True
-
     return await yt_dlp_download(url, output_path, is_audio=False)
+
+async def search_and_download_music(query: str, output_path: str):
+    """Musiqa nomiga ko'ra YouTube dan qidirib yuklash"""
+    print(f"[*] Musiqa qidirilmoqda: {query}")
+    try:
+        import yt_dlp
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': output_path.replace('.mp3', ''),
+            'ffmpeg_location': ffmpeg_binary,
+            'default_search': 'ytsearch1',
+            'quiet': True,
+            'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([f"ytsearch1:{query}"])
+        if os.path.exists(output_path + ".mp3"):
+            os.rename(output_path + ".mp3", output_path)
+            return True
+    except Exception as e:
+        print(f"[-] Music Search Error: {e}")
+    return False
 
 async def yt_dlp_download(url, output_path, is_audio=False):
     try:
@@ -138,7 +142,6 @@ async def yt_dlp_download(url, output_path, is_audio=False):
             'extractor_args': {'youtube': {'player_clients': ['ios', 'android', 'web_embedded']}}
         }
         if is_audio: ydl_opts['postprocessors'] = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
-        if os.path.exists("cookies.txt"): ydl_opts['cookiefile'] = 'cookies.txt'
         with yt_dlp.YoutubeDL(ydl_opts) as ydl: ydl.download([url])
         if is_audio and os.path.exists(output_path + ".mp3"): os.rename(output_path + ".mp3", output_path)
         return True
@@ -146,7 +149,7 @@ async def yt_dlp_download(url, output_path, is_audio=False):
 
 async def download_directly(url, path):
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
+        headers = {"User-Agent": "Mozilla/5.0"}
         r = requests.get(url, stream=True, timeout=60, verify=False, headers=headers)
         with open(path, 'wb') as f:
             for chunk in r.iter_content(chunk_size=8192): f.write(chunk)

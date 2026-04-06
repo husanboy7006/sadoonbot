@@ -72,7 +72,7 @@ from aiogram.types import Message, FSInputFile, InlineKeyboardMarkup, InlineKeyb
 
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 
-from mixer import download_audio, mix_image_audio, identify_music, download_video
+from mixer import download_audio, mix_image_audio, identify_music, download_video, search_and_download_music
 
 import database as db
 
@@ -543,22 +543,31 @@ async def handle_shazam_direct(message: Message, state: FSMContext):
         db.log_stats(message.from_user.id, "shazam")
 
         if track:
-
             shazam_text = (
-
                 f"🎵 **{track['title']}**\n👤 {track['subtitle']}\n\n"
-
                 f"🔗 [Shazam orqali ochish]({track['shazam_url']})\n\n"
-
-                f"🤖 Bot: @sadoon\_ai\_bot"
-
+                f"⏳ Musiqa fayli yuklanmoqda..."
             )
-
-            await message.answer(shazam_text)
-
+            shz_msg = await message.answer(shazam_text)
+            
+            # Musiqani o'zini qidirib yuklaymiz
+            mp3_path = f"temp/{message.from_user.id}_track.mp3"
+            success = await search_and_download_music(f"{track['title']} {track['subtitle']}", mp3_path)
+            
+            if success and os.path.exists(mp3_path):
+                await message.answer_audio(
+                    audio=FSInputFile(mp3_path),
+                    title=track['title'],
+                    performer=track['subtitle'],
+                    caption=f"🎵 {track['title']}\n🤖 @sadoon_ai_bot"
+                )
+                os.remove(mp3_path)
+            else:
+                await message.answer("❌ Afsuski, musiqa faylini topib bo'lmadi.")
+            
+            await shz_msg.delete()
         else:
-
-            await message.answer("❌ Topilmadi.")
+            await message.answer("❌ Musiqani aniqlab bo'lmadi.")
 
         if os.path.exists(temp_path): os.remove(temp_path)
 
