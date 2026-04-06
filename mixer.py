@@ -138,10 +138,13 @@ async def download_audio(url: str, output_path: str):
         # YouTube uchun cookie-lar bilan harakat qilish
         if "youtube.com" in url or "youtu.be" in url:
             ydl_opts['referer'] = 'https://www.youtube.com/'
-            if os.path.exists("cookies.txt"):
-                ydl_opts['cookiefile'] = 'cookies.txt'
+            cookie_path = os.path.join(os.getcwd(), "cookies.txt")
+            if os.path.exists(cookie_path):
+                print(f"[*] DEBUG: cookies.txt topildi ({os.path.getsize(cookie_path)} bytes)")
+                ydl_opts['cookiefile'] = cookie_path
             else:
-                # Brauzerdan cookie-larni olishga urinish (faqat Windows/Desktop uchun)
+                print("[!] DEBUG: cookies.txt TOPILMADI!")
+                # Brauzerdan cookie-larni olish (faqat local Windows uchun foydali)
                 ydl_opts['cookiesfrombrowser'] = ('chrome', 'edge', 'firefox', 'opera', 'brave')
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -189,10 +192,13 @@ async def download_video(url: str, output_path: str):
         # YouTube uchun cookie-lar bilan harakat qilish
         if "youtube.com" in url or "youtu.be" in url:
             ydl_opts['referer'] = 'https://www.youtube.com/'
-            if os.path.exists("cookies.txt"):
-                ydl_opts['cookiefile'] = 'cookies.txt'
+            cookie_path = os.path.join(os.getcwd(), "cookies.txt")
+            if os.path.exists(cookie_path):
+                print(f"[*] DEBUG: cookies.txt topildi ({os.path.getsize(cookie_path)} bytes)")
+                ydl_opts['cookiefile'] = cookie_path
             else:
-                # Brauzerdan cookie-larni olishga urinish
+                print("[!] DEBUG: cookies.txt TOPILMADI!")
+                # Brauzerdan cookie-larni olish
                 ydl_opts['cookiesfrombrowser'] = ('chrome', 'edge', 'firefox', 'opera', 'brave')
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
