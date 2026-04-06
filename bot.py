@@ -131,15 +131,13 @@ class MixState(StatesGroup):
 
 main_keyboard = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="🎬 Klip yasash (🖼 rasm + 🎵 musiqa)", callback_data="mix_choice")],
-    [InlineKeyboardButton(text="📥 Instagram / TikTok / YouTube", callback_data="down_choice")],
+    [InlineKeyboardButton(text="📥 Instagram / TikTok", callback_data="down_choice")],
     [
         InlineKeyboardButton(text="🔍 Musiqani topish", callback_data="shazam_choice"),
         InlineKeyboardButton(text="✍️ Takliflar", callback_data="feedback_choice")
     ],
     [InlineKeyboardButton(text="🌐 Sadoon AI Sayti", url="https://sadoonbot.vercel.app/")]
 ])
-
-
 
 ADMIN_ID = 7110271171 
 
@@ -155,7 +153,7 @@ async def command_start_handler(message: Message, state: FSMContext) -> None:
         "👋 **Salom! Men Sadoon AI botiman.**\n\n"
         "Men sizga quyidagi ishlarda yordam bera olaman:\n"
         "🎬 **Klip yasash** — Rasmingizga sevimli musiqangizni qo'shib video tayyorlash.\n"
-        "📥 **Yuklab olish** — Instagram, TikTok va YouTube videolarini yuklash.\n"
+        "📥 **Yuklab olish** — Instagram va TikTok videolarini yuklash.\n"
         "🔍 **Shazam** — Istalgan musiqani bir zumda topish.\n\n"
         "**Nima qilmoqchimiz? Pastdan tanlang:** 👇"
     )
