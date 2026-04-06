@@ -4,8 +4,8 @@ shazamio
 yt-dlp
 playwright
 aiohttp
-browser_cookie3
 uvicorn
 fastapi
 python-multipart
-python-telegram-bot
+aiogram
+supabase
