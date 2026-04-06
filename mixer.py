@@ -27,18 +27,13 @@ elif shutil.which("ffmpeg"):
 
 AudioSegment.converter = ffmpeg_binary
 
-def _extract_shortcode(url: str) -> str:
-    url = url.rstrip("/")
-    match = re.search(r'/(reel|p|tv)/([A-Za-z0-9_-]+)', url)
-    return match.group(2) if match else url.split("/")[-1]
-
 async def scrape_instagram(url: str):
     """SnapInsta orqali Instagram videosini scraping qilish"""
-    print(f"[*] Instagram Scraping boshlandi: {url[:30]}...")
+    print(f"[*] Instagram Scraping: {url[:30]}...")
     async with async_playwright() as p:
         try:
             browser = await p.chromium.launch(headless=True)
-            context = await browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            context = await browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
             page = await context.new_page()
             await page.goto("https://snapinsta.app/", timeout=60000)
             await page.fill("input#url", url)
@@ -52,148 +47,152 @@ async def scrape_instagram(url: str):
         except Exception as e: print(f"[-] Instagram Scraper error: {e}")
     return None
 
-async def download_directly(video_url, output_path):
-    """Berilgan URLdan faylni yuklab olish"""
-    try:
-        r = requests.get(video_url, stream=True, timeout=60, verify=False)
-        with open(output_path, 'wb') as f:
-            for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
-        return True
-    except: return False
+async def scrape_youtube(url: str):
+    """SaveFrom (ssyoutube) orqali YouTube scraping qilish"""
+    print(f"[*] YouTube Scraping (ssyoutube): {url[:30]}...")
+    async with async_playwright() as p:
+        try:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+            page = await context.new_page()
+            # ssyoutube.com orqali (SaveFrom)
+            await page.goto(f"https://ssyoutube.com/en105/youtube-video-downloader", timeout=60000)
+            await page.fill("input#id_url", url)
+            await page.click("button#btn_submit")
+            try:
+                await page.wait_for_selector("div.result-box", timeout=30000)
+                download_btn = await page.query_selector("a.download-icon")
+                if download_btn:
+                    video_url = await download_btn.get_attribute("href")
+                    if video_url and video_url.startswith("http"):
+                        print("[+] Scraper (SaveFrom) orqali video URL topildi.")
+                        return video_url
+            except:
+                print("[-] Scraper (SaveFrom) timeout yoki link topilmadi.")
+            await browser.close()
+        except Exception as e:
+            print(f"[-] YouTube Scraper error: {e}")
+    return None
 
 async def get_invidious_url(url: str):
     """Invidious API orqali YouTube stream olish"""
     v_id = None
     if "youtu.be" in url: v_id = url.split("/")[-1].split("?")[0]
     else:
-        match = re.search(r"v=([A-Za-z0-9_-]+)", url)
-        if match: v_id = match.group(1)
+        m = re.search(r"v=([A-Za-z0-9_-]+)", url)
+        if m: v_id = m.group(1)
         else:
-            match_short = re.search(r"/shorts/([A-Za-z0-9_-]+)", url)
-            if match_short: v_id = match_short.group(1)
+            ms = re.search(r"/shorts/([A-Za-z0-9_-]+)", url)
+            if ms: v_id = ms.group(1)
             else: v_id = url.split("/")[-1].split("?")[0]
-            
     if not v_id: return None
     
-    # Ko'proq va barqaror Invidious instance'lari
-    instances = [
-        "https://yewtu.be",
-        "https://invidious.projectsegfau.lt",
-        "https://iv.ggtyler.dev",
-        "https://invidious.flokinet.to",
-        "https://inv.riverside.rocks"
-    ]
+    instances = ["https://yewtu.be", "https://invidious.projectsegfau.lt", "https://iv.ggtyler.dev", "https://invidious.flokinet.to"]
     for inst in instances:
         try:
-            print(f"[*] YouTube (Invidious): {inst}/api/v1/videos/{v_id}")
             r = requests.get(f"{inst}/api/v1/videos/{v_id}", timeout=10)
             if r.status_code == 200:
                 data = r.json()
-                if "formatStreams" in data and len(data["formatStreams"]) > 0:
+                if "formatStreams" in data and data["formatStreams"]:
                     return data["formatStreams"][-1]["url"]
         except: pass
     return None
 
 async def download_audio(url: str, output_path: str):
-    """Audio yuklab olish logikasi"""
     print(f"[*] Audio yuklanmoqda: {url[:30]}...")
     
-    # 1. Instagram scrap
+    # Instagram -> Scraper
     if "instagram.com" in url:
         v_url = await scrape_instagram(url)
-        if v_url:
-            if await download_directly(v_url, output_path + ".temp.mp4"):
-                audio = AudioSegment.from_file(output_path + ".temp.mp4")
-                audio.export(output_path, format="mp3", bitrate="192k")
-                os.remove(output_path + ".temp.mp4")
-                return True
+        if v_url and await download_directly(v_url, output_path + ".temp.mp4"):
+            AudioSegment.from_file(output_path + ".temp.mp4").export(output_path, format="mp3", bitrate="192k")
+            os.remove(output_path + ".temp.mp4")
+            return True
 
-    # 2. YouTube Invidious
+    # YouTube -> Invidious -> Scraper -> Cobalt -> yt-dlp
+    if "youtube.com" in url or "youtu.be" in url:
+        # Invidious
+        v_url = await get_invidious_url(url)
+        if v_url and await download_directly(v_url, output_path + ".temp.mp4"):
+            AudioSegment.from_file(output_path + ".temp.mp4").export(output_path, format="mp3", bitrate="192k")
+            os.remove(output_path + ".temp.mp4")
+            return True
+        # Scraper (SaveFrom)
+        v_url = await scrape_youtube(url)
+        if v_url and await download_directly(v_url, output_path + ".temp.mp4"):
+            AudioSegment.from_file(output_path + ".temp.mp4").export(output_path, format="mp3", bitrate="192k")
+            os.remove(output_path + ".temp.mp4")
+            return True
+
+    # Cobalt mirrors
+    for mirror in ["https://api.cobalt.tools/api/json", "https://cobalt-api.kwiateusz.xyz/api/json", "https://co.wuk.sh/api/json"]:
+        a_url = await get_cobalt_url_custom(url, mirror, "audio")
+        if a_url and await download_directly(a_url, output_path): return True
+
+    # yt-dlp
+    return await yt_dlp_download(url, output_path, is_audio=True)
+
+async def download_video(url: str, output_path: str):
+    print(f"[*] Video yuklanmoqda: {url[:30]}...")
+    
+    # Instagram Scraper
+    if "instagram.com" in url:
+        v_url = await scrape_instagram(url)
+        if v_url and await download_directly(v_url, output_path): return True
+
+    # YouTube (Invidious -> Scraper -> Cobalt)
     if "youtube.com" in url or "youtu.be" in url:
         v_url = await get_invidious_url(url)
-        if v_url:
-            if await download_directly(v_url, output_path + ".temp.mp4"):
-                audio = AudioSegment.from_file(output_path + ".temp.mp4")
-                audio.export(output_path, format="mp3", bitrate="192k")
-                os.remove(output_path + ".temp.mp4")
-                return True
+        if v_url and await download_directly(v_url, output_path): return True
+        
+        v_url = await scrape_youtube(url)
+        if v_url and await download_directly(v_url, output_path): return True
 
-    # 3. Cobalt API (Mirrors)
-    cobalt_mirrors = [
-        "https://api.cobalt.tools/api/json",
-        "https://cobalt-api.kwiateusz.xyz/api/json",
-        "https://co.wuk.sh/api/json"
-    ]
-    for mirror in cobalt_mirrors:
-        audio_url = await get_cobalt_url_custom(url, mirror, mode="audio")
-        if audio_url:
-            if await download_directly(audio_url, output_path): return True
+    # Cobalt
+    for mirror in ["https://api.cobalt.tools/api/json", "https://cobalt-api.kwiateusz.xyz/api/json", "https://co.wuk.sh/api/json"]:
+        v_url = await get_cobalt_url_custom(url, mirror, "video")
+        if v_url and await download_directly(v_url, output_path): return True
 
-    # 4. yt-dlp (Last Resort)
+    # yt-dlp
+    return await yt_dlp_download(url, output_path, is_audio=False)
+
+async def yt_dlp_download(url, output_path, is_audio=False):
     try:
         import yt_dlp
         ydl_opts = {
-            'format': 'bestaudio/best',
-            'outtmpl': output_path.replace('.mp3', ''),
-            'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
+            'format': 'bestaudio/best' if is_audio else 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
+            'outtmpl': output_path.replace('.mp3', '') if is_audio else output_path,
             'ffmpeg_location': ffmpeg_binary, 'quiet': True,
             'extractor_args': {'youtube': {'player_clients': ['ios', 'android', 'web_embedded']}}
         }
+        if is_audio: ydl_opts['postprocessors'] = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
         if os.path.exists("cookies.txt"): ydl_opts['cookiefile'] = 'cookies.txt'
+        
         with yt_dlp.YoutubeDL(ydl_opts) as ydl: ydl.download([url])
-        if os.path.exists(output_path + ".mp3"): os.rename(output_path + ".mp3", output_path)
+        if is_audio and os.path.exists(output_path + ".mp3"): os.rename(output_path + ".mp3", output_path)
         return True
-    except: raise Exception("Audio yuklab bo'lmadi.")
+    except Exception as e:
+        print(f"[-] yt-dlp error: {e}")
+        return False
 
-async def download_video(url: str, output_path: str):
-    """Video yuklab olish"""
-    print(f"[*] Video yuklanmoqda: {url[:30]}...")
-
-    # 1. Instagram scrap
-    if "instagram.com" in url:
-        v_url = await scrape_instagram(url)
-        if v_url:
-            if await download_directly(v_url, output_path): return True
-
-    # 2. YouTube Invidious
-    if "youtube.com" in url or "youtu.be" in url:
-        v_url = await get_invidious_url(url)
-        if v_url:
-            if await download_directly(v_url, output_path): return True
-
-    # 3. Cobalt API Mirrors
-    cobalt_mirrors = [
-        "https://api.cobalt.tools/api/json",
-        "https://cobalt-api.kwiateusz.xyz/api/json",
-        "https://co.wuk.sh/api/json"
-    ]
-    for mirror in cobalt_mirrors:
-        v_url = await get_cobalt_url_custom(url, mirror, mode="video")
-        if v_url:
-            if await download_directly(v_url, output_path): return True
-
-    # 4. yt-dlp
+async def download_directly(url, path):
     try:
-        import yt_dlp
-        ydl_opts = {
-            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
-            'outtmpl': output_path, 'ffmpeg_location': ffmpeg_binary, 'quiet': True,
-            'extractor_args': {'youtube': {'player_clients': ['ios', 'android', 'web_embedded']}}
-        }
-        if os.path.exists("cookies.txt"): ydl_opts['cookiefile'] = 'cookies.txt'
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl: ydl.download([url])
+        r = requests.get(url, stream=True, timeout=60, verify=False)
+        with open(path, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
         return True
-    except: raise Exception("Video yuklab bo'lmadi.")
+    except: return False
 
-async def get_cobalt_url_custom(url: str, api_url: str, mode: str) -> str:
+async def get_cobalt_url_custom(url, api_url, mode):
     headers = {"Accept": "application/json", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
     data = {"url": url, "videoQuality": "720", "downloadMode": mode, "audioFormat": "mp3"}
     try:
+        print(f"[*] Cobalt Mirror: {api_url}")
         r = requests.post(api_url, json=data, headers=headers, timeout=10)
         if r.status_code == 200:
             res = r.json()
             if "url" in res: return res["url"]
-    except: pass
+    except Exception as e: print(f"[-] Cobalt error ({api_url}): {e}")
     return None
 
 def mix_image_audio(image_path: str, audio_path: str, output_path: str):
