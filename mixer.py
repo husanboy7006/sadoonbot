@@ -16,13 +16,20 @@ if sys.stdout.encoding != "utf-8":
         pass
 
 # FFmpeg sozlamasi
+import shutil
+
+# FFmpeg yo'lini aniqlash
+ffmpeg_binary = "ffmpeg" # Standart holatda
 if os.path.exists("ffmpeg.exe"):
-    os.environ["PATH"] += os.pathsep + os.path.abspath(".")
-    AudioSegment.converter = os.path.abspath("ffmpeg.exe")
     ffmpeg_binary = os.path.abspath("ffmpeg.exe")
-else:
-    AudioSegment.converter = "ffmpeg"
-    ffmpeg_binary = "ffmpeg"
+elif shutil.which("ffmpeg"):
+    ffmpeg_binary = shutil.which("ffmpeg")
+
+# Pydub uchun ham sozlash
+AudioSegment.converter = ffmpeg_binary
+os.environ["PATH"] += os.pathsep + os.path.dirname(ffmpeg_binary) if os.path.dirname(ffmpeg_binary) else ""
+
+print(f"DEBUG: FFmpeg binary path: {ffmpeg_binary}")
 
 def _extract_shortcode(url: str) -> str:
     """URL dan shortcode ajratib olish"""
