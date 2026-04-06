@@ -37,6 +37,7 @@ async def get_cobalt_url(url: str, mode: str = "video") -> str:
     """Cobalt API orqali media URL olish (mode: 'video' yoki 'audio')"""
     api_urls = [
         "https://api.cobalt.tools/api/json",
+        "https://cobalt.qwer.zip/api/json",
         "https://cobalt-api.kwiateusz.xyz/api/json",
         "https://cobalt.lonely-dev.xyz/api/json"
     ]
@@ -85,29 +86,77 @@ async def download_audio(url: str, output_path: str):
         except:
             pass
 
-    # 2-yo'l: yt-dlp fallback
+    # 2-yo'l: TikTok uchun maxsus API (TikWM)
+    if "tiktok.com" in url:
+        try:
+            print("[*] TikTok API (TikWM) orqali yuklanmoqda...")
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"}
+            tikwm_res = requests.post("https://www.tikwm.com/api/", data={"url": url}, headers=headers, timeout=30).json()
+            if tikwm_res.get("code") == 0:
+                music_data = tikwm_res.get("data", {})
+                audio_url = music_data.get("music")
+                if audio_url:
+                    if not audio_url.startswith("http"):
+                        audio_url = "https://www.tikwm.com" + audio_url
+                    
+                    # 1-yo'l: Requests
+                    try:
+                        r = requests.get(audio_url, stream=True, timeout=60, verify=False)
+                        with open(output_path, 'wb') as f:
+                            for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
+                        print("[+] TikTok audio TikWM (Requests) orqali yuklandi.")
+                        return True
+                    except:
+                        # 2-yo'l: curl fallback (agar requests bloklansa)
+                        print("[*] Requests muvaffaqiyatsiz, curl orqali harakat qilinmoqda...")
+                        subprocess.run(["curl.exe", "-L", "-o", output_path, audio_url], check=True, capture_output=True)
+                        if os.path.exists(output_path) and os.path.getsize(output_path) > 1000:
+                            print("[+] TikTok audio TikWM (curl) orqali yuklandi.")
+                            return True
+            else:
+                print(f"[-] TikWM API error: {tikwm_res.get('msg')}")
+        except Exception as e:
+            print(f"[-] TikWM error: {e}")
+
+    # 3-yo'l: yt-dlp fallback
     try:
         import yt_dlp
         ydl_opts = {
             'format': 'bestaudio/best',
-            'outtmpl': output_path.replace('.mp3', ''),
+            'outtmpl': output_path.replace('.mp3', '') + '.%(ext)s',
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
             }],
             'ffmpeg_location': ffmpeg_binary,
-            'quiet': True
+            'quiet': True,
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+            'nocheckcertificate': True
         }
+        
+        # YouTube uchun cookie-lar bilan harakat qilish
+        if "youtube.com" in url or "youtu.be" in url:
+            ydl_opts['referer'] = 'https://www.youtube.com/'
+            if os.path.exists("cookies.txt"):
+                ydl_opts['cookiefile'] = 'cookies.txt'
+            else:
+                # Brauzerdan cookie-larni olishga urinish (faqat Windows/Desktop uchun)
+                ydl_opts['cookiesfrombrowser'] = ('chrome', 'edge', 'firefox', 'opera', 'brave')
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
         
-        if os.path.exists(output_path + ".mp3"):
-            os.rename(output_path + ".mp3", output_path)
-        return True
+        actual_file = output_path.replace('.mp3', '') + ".mp3"
+        if os.path.exists(actual_file):
+            if actual_file != output_path:
+                if os.path.exists(output_path): os.remove(output_path)
+                os.rename(actual_file, output_path)
+            return True
+        return False
     except Exception as e:
         print(f"[-] yt-dlp error: {e}")
-        raise Exception(f"Audio yuklab bo'lmadi: {e}")
+        return False
 
 async def download_video(url: str, output_path: str):
     """Har qanday video yuklab olish"""
@@ -132,14 +181,26 @@ async def download_video(url: str, output_path: str):
             'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
             'outtmpl': output_path,
             'ffmpeg_location': ffmpeg_binary,
-            'quiet': True
+            'quiet': True,
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+            'nocheckcertificate': True
         }
+
+        # YouTube uchun cookie-lar bilan harakat qilish
+        if "youtube.com" in url or "youtu.be" in url:
+            ydl_opts['referer'] = 'https://www.youtube.com/'
+            if os.path.exists("cookies.txt"):
+                ydl_opts['cookiefile'] = 'cookies.txt'
+            else:
+                # Brauzerdan cookie-larni olishga urinish
+                ydl_opts['cookiesfrombrowser'] = ('chrome', 'edge', 'firefox', 'opera', 'brave')
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
         return True
     except Exception as e:
         print(f"[-] yt-dlp video error: {e}")
-        raise Exception(f"Video yuklab bo'lmadi: {e}")
+        return False
 
 def mix_image_audio(image_path: str, audio_path: str, output_path: str):
     """Rasm va Audioni birlashtiradi (Subprocess orqali barqarorroq)"""
