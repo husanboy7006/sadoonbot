@@ -67,11 +67,11 @@ API_URL = os.getenv("API_URL", "http://127.0.0.1:7860/api/mix")
 
 FINAL_CAPTION = (
 
-    "тЬЕ **Bajarildi!**\n\n"
+    "✅ **Bajarildi!**\n\n"
 
-    "ЁЯОе Klip yaratuvchi: Sadoon AI Bot\n"
+    "🎵е Klip yaratuvchi: Sadoon AI Bot\n"
 
-    "ЁЯФЧ @sadoon\_ai\_bot\n\n"
+    "🔗 @sadoon\_ai\_bot\n\n"
 
     "Do'stlaringizga ham ulashing! ЁЯУд"
 
@@ -106,20 +106,13 @@ class MixState(StatesGroup):
 # Asosiy tugmalar (Menu)
 
 main_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-
-    [InlineKeyboardButton(text="ЁЯОм Klip yasash (ЁЯЦ╝ rasm + ЁЯО╡ musiqa)", callback_data="mix_choice")],
-
-    [InlineKeyboardButton(text="ЁЯУе Instagram (Video yuklash)", callback_data="down_choice")],
-
+    [InlineKeyboardButton(text="🎬 Klip yasash (🖼 rasm + 🎵 musiqa)", callback_data="mix_choice")],
+    [InlineKeyboardButton(text="📥 Instagram (Video yuklash)", callback_data="down_choice")],
     [
-
-        InlineKeyboardButton(text="ЁЯФН Musiqani topish", callback_data="shazam_choice"),
-
-        InlineKeyboardButton(text="тЬНя╕П Takliflar", callback_data="feedback_choice")
-
+        InlineKeyboardButton(text="🔍 Musiqani topish", callback_data="shazam_choice"),
+        InlineKeyboardButton(text="✍️ Takliflar", callback_data="feedback_choice")
     ],
-
-    [InlineKeyboardButton(text="ЁЯМР Sadoon AI Sayti", url="https://sadoonbot.vercel.app/")]
+    [InlineKeyboardButton(text="🌐 Sadoon AI Sayti", url="https://sadoonbot.vercel.app/")]
 
 ])
 
@@ -137,17 +130,17 @@ async def command_start_handler(message: Message, state: FSMContext) -> None:
 
     start_text = (
 
-        "ЁЯСЛ **Salom! Men Sadoon AI botiman.**\n\n"
+        "👋 **Salom! Men Sadoon AI botiman.**\n\n"
 
         "Men sizga quyidagi ishlarda yordam bera olaman:\n"
 
-        "ЁЯОм **Klip yasash** тАФ Rasmingizga sevimli musiqangizni qo'shib video tayyorlash.\n"
+        "🎬 **Klip yasash** — Rasmingizga sevimli musiqangizni qo'shib video tayyorlash.\n"
 
-        "ЁЯУе **Instagram** тАФ Reels va har qanday videoni yuklab olish.\n"
+        "📥 **Instagram** — Reels va har qanday videoni yuklab olish.\n"
 
-        "ЁЯФН **Shazam** тАФ Istalgan musiqani bir zumda topish.\n\n"
+        "🔍 **Shazam** — Istalgan musiqani bir zumda topish.\n\n"
 
-        "**Nima qilmoqchimiz? Pastdan tanlang:** ЁЯСЗ"
+        "**Nima qilmoqchimiz? Pastdan tanlang:** 👇"
 
     )
 
@@ -169,7 +162,7 @@ async def admin_stats_handler(message: Message):
 
         admin_kb = InlineKeyboardMarkup(inline_keyboard=[
 
-            [InlineKeyboardButton(text="ЁЯУв Hammasiga xabar yuborish", callback_data="broadcast_start")]
+            [InlineKeyboardButton(text="📣 Hammasiga xabar yuborish", callback_data="broadcast_start")]
 
         ])
 
@@ -177,7 +170,7 @@ async def admin_stats_handler(message: Message):
 
     else:
 
-        await message.answer("тЭМ Bu buyruq faqat Admin uchun!")
+        await message.answer("❌ Bu buyruq faqat Admin uchun!")
 
 
 
@@ -195,9 +188,9 @@ async def start_broadcast(callback: CallbackQuery, state: FSMContext):
 
     await callback.answer()
 
-    cancel_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="тЭМ Bekor qilish", callback_data="broadcast_cancel")]])
+    cancel_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Bekor qilish", callback_data="broadcast_cancel")]])
 
-    await callback.message.answer("ЁЯУг Barcha foydalanuvchilarga yubormoqchi bo'lgan xabaringizni yozing (matn, rasm yoki video):", reply_markup=cancel_kb)
+    await callback.message.answer("📢 Barcha foydalanuvchilarga yubormoqchi bo'lgan xabaringizni yozing (matn, rasm yoki video):", reply_markup=cancel_kb)
 
     await state.set_state(MixState.waiting_for_broadcast)
 
@@ -211,7 +204,7 @@ async def cancel_broadcast(callback: CallbackQuery, state: FSMContext):
 
     await callback.answer("Bekor qilindi")
 
-    await callback.message.edit_text("ЁЯЪл Xabar yuborish bekor qilindi.")
+    await callback.message.edit_text("🚫 Xabar yuborish bekor qilindi.")
 
     await callback.message.answer("Menu:", reply_markup=main_keyboard)
 
@@ -231,7 +224,7 @@ async def handle_broadcast_dispatch(message: Message, state: FSMContext):
 
     
 
-    status_msg = await message.answer(f"тП│ Xabar yuborilmoqda: 0/{len(users)}...")
+    status_msg = await message.answer(f"⏳ Xabar yuborilmoqda: 0/{len(users)}...")
 
     
 
@@ -245,7 +238,7 @@ async def handle_broadcast_dispatch(message: Message, state: FSMContext):
 
             if count % 10 == 0: # Har 10 ta xabarda statusni yangilaymiz
 
-                await status_msg.edit_text(f"тП│ Xabar yuborilmoqda: {count}/{len(users)}...")
+                await status_msg.edit_text(f"⏳ Xabar yuborilmoqda: {count}/{len(users)}...")
 
             await asyncio.sleep(0.05) # Telegram limitlariga tushib qolmaslik uchun
 
@@ -259,7 +252,7 @@ async def handle_broadcast_dispatch(message: Message, state: FSMContext):
 
             
 
-    await status_msg.edit_text(f"тЬЕ **Yuborish yakunlandi!**\n\nЁЯСд Qabul qildi: {count}\nЁЯЪл Bloklagan: {blocked}\nЁЯУК Jami: {len(users)}")
+    await status_msg.edit_text(f"✅ **Yuborish yakunlandi!**\n\n👤 Qabul qildi: {count}\n🚫 Bloklagan: {blocked}\n📊 Jami: {len(users)}")
 
 
 
@@ -271,7 +264,7 @@ async def feedback_btn(callback: CallbackQuery, state: FSMContext):
 
     await callback.answer()
 
-    await callback.message.answer("тЬНя╕П Iltimos, o'z taklif yoki shikoyatingizni yozib qoldiring. Adminlarimiz uni albatta ko'rib chiqishadi:")
+    await callback.message.answer("✍️ Iltimos, o'z taklif yoki shikoyatingizni yozib qoldiring. Adminlarimiz uni albatta ko'rib chiqishadi:")
 
     await state.set_state(MixState.waiting_for_feedback)
 
@@ -285,9 +278,9 @@ async def handle_feedback_msg(message: Message, state: FSMContext):
 
     # Adminga yuboramiz
 
-    user_info = f"ЁЯСд Foydalanuvchi: {message.from_user.full_name}\nЁЯЖФ ID: `{message.from_user.id}`\nЁЯФЧ User: @{message.from_user.username or 'yoq'}"
+    user_info = f"👤 Foydalanuvchi: {message.from_user.full_name}\n🆔 ID: `{message.from_user.id}`\n🔗 User: @{message.from_user.username or 'yoq'}"
 
-    await bot.send_message(ADMIN_ID, f"ЁЯУй **Yangi Taklif!**\n\n{user_info}\n\nЁЯУЭ Xabar: {message.text or 'fayl yuborildi'}")
+    await bot.send_message(ADMIN_ID, f"📩 **Yangi Taklif!**\n\n{user_info}\n\nЁЯУЭ Xabar: {message.text or 'fayl yuborildi'}")
 
     if not message.text:
 
@@ -295,7 +288,7 @@ async def handle_feedback_msg(message: Message, state: FSMContext):
 
          
 
-    await message.answer("тЬЕ Rahmat! Taklifingiz qabul qilindi va adminga yetkazildi. ЁЯШК", reply_markup=main_keyboard)
+    await message.answer("✅ Rahmat! Taklifingiz qabul qilindi va adminga yetkazildi. 😊", reply_markup=main_keyboard)
 
 
 
@@ -307,7 +300,7 @@ async def mix_choice_btn(callback: CallbackQuery, state: FSMContext):
 
     await callback.answer()
 
-    await callback.message.answer("ЁЯУ╕ Juda yaxshi! Unda birinchi **rasm** yuboring:")
+    await callback.message.answer("📸 Juda yaxshi! Unda birinchi **rasm** yuboring:")
 
     await state.set_state(MixState.waiting_for_photo)
 
@@ -319,7 +312,7 @@ async def down_choice_btn(callback: CallbackQuery, state: FSMContext):
 
     await callback.answer()
 
-    await callback.message.answer("ЁЯФЧ Menga Instagram video havola (link) yuboring:")
+    await callback.message.answer("🔗 Menga Instagram video havola (link) yuboring:")
 
     await state.set_state(MixState.waiting_for_downloader)
 
@@ -331,7 +324,7 @@ async def shazam_choice_btn(callback: CallbackQuery, state: FSMContext):
 
     await callback.answer()
 
-    await callback.message.answer("ЁЯФН Audio/video fayl yoki Instagram linkini yuboring:")
+    await callback.message.answer("🔍 Audio/video fayl yoki Instagram linkini yuboring:")
 
     await state.set_state(MixState.waiting_for_shazam)
 
@@ -345,7 +338,7 @@ async def handle_photo(message: Message, state: FSMContext):
 
     await state.update_data(photo_id=photo_id)
 
-    await message.answer("тЬЕ Rasm tayyor!\n\nЁЯФЧ Endi audiosi bor video linkini yuboring:")
+    await message.answer("✅ Rasm tayyor!\n\n🔗 Endi audiosi bor video linkini yuboring:")
 
     await state.set_state(MixState.waiting_for_link)
 
@@ -387,7 +380,7 @@ async def handle_mix_link(message: Message, state: FSMContext):
 
     if not url:
 
-        return await message.answer("тЭМ Havola topilmadi.")
+        return await message.answer("❌ Havola topilmadi.")
 
     
 
@@ -399,7 +392,7 @@ async def handle_mix_link(message: Message, state: FSMContext):
 
     await state.clear()
 
-    wait_msg = await message.answer(f"тП│ Tayyorlanmoqda...\nЁЯФЧ URL: {url[:30]}...")
+    wait_msg = await message.answer(f"⏳ Tayyorlanmoqda...\n🔗 URL: {url[:30]}...")
 
     
 
@@ -435,7 +428,7 @@ async def handle_mix_link(message: Message, state: FSMContext):
 
     except Exception as e:
 
-        await message.answer(f"тЭМ Xatolik: {str(e)}")
+        await message.answer(f"❌ Xatolik: {str(e)}")
 
     
 
@@ -453,7 +446,7 @@ async def handle_download_direct(message: Message, state: FSMContext):
 
     if not url:
 
-        return await message.answer("тЭМ Havola topilmadi.")
+        return await message.answer("❌ Havola topilmadi.")
 
     
 
@@ -461,7 +454,7 @@ async def handle_download_direct(message: Message, state: FSMContext):
 
     await state.clear()
 
-    wait_msg = await message.answer(f"ЁЯУе Yuklanmoqda...\nЁЯФЧ URL: {url[:30]}...")
+    wait_msg = await message.answer(f"📥 Yuklanmoqda...\n🔗 URL: {url[:30]}...")
 
     try:
 
@@ -481,7 +474,7 @@ async def handle_download_direct(message: Message, state: FSMContext):
 
     except Exception as e:
 
-        await message.answer(f"тЭМ Xatolik: {str(e)}")
+        await message.answer(f"❌ Xatolik: {str(e)}")
 
     await wait_msg.delete()
 
@@ -495,7 +488,7 @@ async def handle_shazam_direct(message: Message, state: FSMContext):
 
     await state.clear()
 
-    wait_msg = await message.answer("ЁЯФН Tahlil qilinmoqda...")
+    wait_msg = await message.answer("🔍 Tahlil qilinmoqda...")
 
     try:
 
@@ -513,7 +506,7 @@ async def handle_shazam_direct(message: Message, state: FSMContext):
 
             else:
 
-                return await message.answer("тЭМ Havola topilmadi.")
+                return await message.answer("❌ Havola topilmadi.")
 
         elif message.audio or message.voice or message.video:
 
@@ -529,11 +522,11 @@ async def handle_shazam_direct(message: Message, state: FSMContext):
 
             shazam_text = (
 
-                f"ЁЯО╡ **{track['title']}**\nЁЯСд {track['subtitle']}\n\n"
+                f"🎵 **{track['title']}**\n👤 {track['subtitle']}\n\n"
 
-                f"ЁЯФЧ [Shazam orqali ochish]({track['shazam_url']})\n\n"
+                f"🔗 [Shazam orqali ochish]({track['shazam_url']})\n\n"
 
-                f"ЁЯдЦ Bot: @sadoon\_ai\_bot"
+                f"🤖 Bot: @sadoon\_ai\_bot"
 
             )
 
@@ -541,13 +534,13 @@ async def handle_shazam_direct(message: Message, state: FSMContext):
 
         else:
 
-            await message.answer("тЭМ Topilmadi.")
+            await message.answer("❌ Topilmadi.")
 
         if os.path.exists(temp_path): os.remove(temp_path)
 
     except Exception as e:
 
-        await message.answer(f"тЭМ Xatolik: {str(e)}")
+        await message.answer(f"❌ Xatolik: {str(e)}")
 
     await wait_msg.delete()
 
@@ -561,9 +554,9 @@ async def main():
 
     commands = [
 
-        BotCommand(command="start", description="ЁЯПа Botni boshlash"),
+        BotCommand(command="start", description="🚀 Botni boshlash"),
 
-        BotCommand(command="admin", description="ЁЯУК Statistika (Admin)")
+        BotCommand(command="admin", description="📊 Statistika (Admin)")
 
     ]
 
