@@ -1,14 +1,43 @@
 import socket
+import urllib.request
+import json
+import ssl
 
-# Telegram DNS DNS-resolution xatosini chetlab o'tish uchun monkey-patch
+ctx = ssl._create_unverified_context()
 old_getaddrinfo = socket.getaddrinfo
+dns_cache = {}
+
 def new_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
-    if host == 'api.telegram.org':
-        # Telegram API serverining aniq IP manzili
-        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', ('149.154.167.220', port))]
+    if host in ["127.0.0.1", "localhost", "0.0.0.0", "api.telegram.org"]:
+        if host == "api.telegram.org":
+            return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', ('149.154.167.220', port))]
+        return old_getaddrinfo(host, port, family, type, proto, flags)
+    
+    if host in dns_cache:
+        ip = dns_cache[host]
+        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', (ip, port))]
+    
+    try:
+        url = f"https://1.1.1.1/dns-query?name={host}&type=A"
+        req = urllib.request.Request(url, headers={'accept': 'application/dns-json'})
+        with urllib.request.urlopen(req, timeout=5, context=ctx) as response:
+            data = json.loads(response.read().decode())
+            if "Answer" in data:
+                for ans in data["Answer"]:
+                    if ans["type"] == 1:
+                        ip = ans["data"]
+                        dns_cache[host] = ip
+                        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', (ip, port))]
+    except Exception as e:
+        pass
+    
     return old_getaddrinfo(host, port, family, type, proto, flags)
+
 socket.getaddrinfo = new_getaddrinfo
 
+import socket
+
+# Telegram DNS DNS-resolution xatosini chetlab o'tish uchun monkey-patch
 import asyncio
 
 import os
