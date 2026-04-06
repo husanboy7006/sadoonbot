@@ -111,9 +111,22 @@ async def download_video(url: str, output_path: str):
     return await yt_dlp_download(url, output_path, is_audio=False)
 
 async def search_and_download_music(query: str, output_path: str):
-    """Musiqa nomiga ko'ra Invidious/YouTube dan qidirib yuklash"""
-    print(f"[*] Musiqa qidirilmoqda (Invidious Search): {query}")
-    instances = ["https://yewtu.be", "https://invidious.projectsegfau.lt", "https://iv.ggtyler.dev"]
+    """Musiqa nomiga ko'ra bir nechta manbalardan qidirib yuklash"""
+    print(f"[*] Musiqa qidirilmoqda (Multi-Search): {query}")
+    
+    # Strategy 1: Vreden Music API (High stability)
+    try:
+        r = requests.get(f"https://api.vreden.me/api/yt-search", params={"query": query}, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            if data.get('status') and data.get('data'):
+                v_url = data['data'][0]['url']
+                print(f"[+] Vreden orqali topildi: {v_url}")
+                if await download_audio(v_url, output_path): return True
+    except: pass
+
+    # Strategy 2: Invidious Instances
+    instances = ["https://yewtu.be", "https://invidious.projectsegfau.lt", "https://iv.ggtyler.dev", "https://invidious.flokinet.to"]
     v_id = None
     for inst in instances:
         try:
@@ -126,39 +139,12 @@ async def search_and_download_music(query: str, output_path: str):
         except: pass
     
     if v_id:
-        print(f"[+] Musiqa ID topildi: {v_id}. Yuklanmoqda...")
-        # Direct link or yt-dlp
         url = f"https://www.youtube.com/watch?v={v_id}"
-        # Invidious or Cobalt for higher success
-        for inst in instances:
-            try:
-                r = requests.get(f"{inst}/api/v1/videos/{v_id}", timeout=10)
-                if r.status_code == 200:
-                    s_data = r.json()
-                    if "formatStreams" in s_data and s_data["formatStreams"]:
-                        v_url = s_data["formatStreams"][-1]["url"]
-                        if await download_directly(v_url, output_path + ".temp.mp4"):
-                            AudioSegment.from_file(output_path + ".temp.mp4").export(output_path, format="mp3", bitrate="192k")
-                            os.remove(output_path + ".temp.mp4")
-                            return True
-            except: pass
-        
-        # Fallback to general downloader
-        return await download_audio(url, output_path)
+        print(f"[+] Invidious orqali ID topildi: {v_id}")
+        if await download_audio(url, output_path): return True
 
-    # Very last resort: yt-dlp search
-    try:
-        import yt_dlp
-        ydl_opts = {
-            'format': 'bestaudio/best', 'outtmpl': output_path.replace('.mp3', ''), 'ffmpeg_location': ffmpeg_binary,
-            'default_search': 'ytsearch1', 'quiet': True, 'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl: ydl.download([f"ytsearch1:{query}"])
-        if os.path.exists(output_path + ".mp3"):
-            os.rename(output_path + ".mp3", output_path)
-            return True
-    except: pass
-    return False
+    # Strategy 3: Direct yt-dlp search
+    return await yt_dlp_download(f"ytsearch1:{query}", output_path, is_audio=True)
 
 async def yt_dlp_download(url, output_path, is_audio=False):
     try:
