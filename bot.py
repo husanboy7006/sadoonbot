@@ -1,3 +1,14 @@
+import socket
+
+# Telegram DNS DNS-resolution xatosini chetlab o'tish uchun monkey-patch
+old_getaddrinfo = socket.getaddrinfo
+def new_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    if host == 'api.telegram.org':
+        # Telegram API serverining aniq IP manzili
+        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', ('149.154.167.220', port))]
+    return old_getaddrinfo(host, port, family, type, proto, flags)
+socket.getaddrinfo = new_getaddrinfo
+
 import asyncio
 
 import os
