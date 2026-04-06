@@ -1,6 +1,14 @@
 import asyncio
 import os
 import aiohttp
+import sys
+
+# Windows terminalda Unicode (emoji) xatolarni oldini olish uchun
+if sys.stdout.encoding != 'utf-8':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except AttributeError:
+        pass # Eski python versiyalari uchun
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
@@ -13,7 +21,8 @@ import database as db
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.default import DefaultBotProperties
 
-TOKEN = "8727075082:AAEQrVaA_S-D6wHy1URANE2NgLVMs5d7yXw" 
+TOKEN = "8727075082:AAEQrVaA_S-D6wHy1URANE2NgLVMs5d7yXw"  # Asosiy bot
+# TOKEN = "8307406554:AAHgJXXn8PcQYvdJm65aDXXkw0SUSzSQNu8"  # Test boti
 API_URL = os.getenv("API_URL", "http://127.0.0.1:7860/api/mix")
 
 # Foydalanuvchi tanlagan variant (Variant 3)
@@ -160,50 +169,62 @@ async def handle_photo(message: Message, state: FSMContext):
     await message.answer("✅ Rasm tayyor!\n\n🔗 Endi audiosi bor video linkini yuboring:")
     await state.set_state(MixState.waiting_for_link)
 
-@dp.message(MixState.waiting_for_link, F.text.contains("http"))
+def extract_url(text: str):
+    import re
+    # Matn ichidan linkni qidirish
+    urls = re.findall(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', text)
+    if not urls: return None
+    # Faqat bizga kerakli platforma linkini olamiz
+    for u in urls:
+        # Linkni oxiridagi ortiqcha belgilardan tozalash (emoji yoki matn yopishgan bo'lsa)
+        u = u.split(' ')[0].split('\n')[0].strip('.,()!?*')
+        if any(x in u.lower() for x in ["tiktok.com", "instagram.com", "reels", "youtube.com", "youtu.be"]):
+            print(f"DEBUG: Cleaned URL -> {u}")
+            return u
+    return urls[0].split(' ')[0].split('\n')[0].strip('.,()!?*')
+
+@dp.message(MixState.waiting_for_link, F.text)
 async def handle_mix_link(message: Message, state: FSMContext):
-    url = message.text
+    url = extract_url(message.text)
+    if not url:
+        return await message.answer("❌ Havola topilmadi.")
+    
+    print(f"DEBUG: Extracted URL for mix: {url}")
     data = await state.get_data()
     photo_id = data.get("photo_id")
     await state.clear()
-    wait_msg = await message.answer("⏳ Video tayyorlanmoqda, iltimos kuting...")
+    wait_msg = await message.answer(f"⏳ Tayyorlanmoqda...\n🔗 URL: {url[:30]}...")
+    
     try:
         os.makedirs("temp", exist_ok=True)
         photo_path = f"temp/{message.from_user.id}_p.jpg"
+        audio_path = f"temp/{message.from_user.id}_a.mp3"
+        output_path = f"temp/{message.from_user.id}_out.mp4"
+        
         await bot.download(photo_id, destination=photo_path)
+        await download_audio(url, audio_path)
+        mix_image_audio(photo_path, audio_path, output_path)
+        
         db.log_stats(message.from_user.id, "mix")
+        await message.answer_video(video=FSInputFile(output_path), caption=FINAL_CAPTION)
         
-        form_data = aiohttp.FormData()
-        form_data.add_field('url', url)
-        form_data.add_field('image', open(photo_path, 'rb'))
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.post(API_URL, data=form_data, timeout=300) as response:
-                result = await response.json()
-                if result.get("status") == "success":
-                    # download_url /download/TASK_ID formatida keladi
-                    task_id = result.get('download_url').split("/")[-1]
-                    video_path = f"output/{task_id}_final.mp4"
-                    
-                    if os.path.exists(video_path):
-                        await message.answer_video(video=FSInputFile(video_path), caption=FINAL_CAPTION)
-                        # Faylni yuborgach o'chirib yuboramiz (serverda joy tejash uchun)
-                        os.remove(video_path) 
-                    else:
-                        await message.answer("❌ Xatolik: Tayyor video fayli topilmadi.")
-                else:
-                    await message.answer(f"❌ Xato: {result.get('message')}")
-        if os.path.exists(photo_path): os.remove(photo_path)
+        for f in [photo_path, audio_path, output_path]:
+            if os.path.exists(f): os.remove(f)
     except Exception as e:
         await message.answer(f"❌ Xatolik: {str(e)}")
+    
     await wait_msg.delete()
     await message.answer("Menu:", reply_markup=main_keyboard)
 
-@dp.message(MixState.waiting_for_downloader, F.text.contains("http"))
+@dp.message(MixState.waiting_for_downloader, F.text)
 async def handle_download_direct(message: Message, state: FSMContext):
-    url = message.text
+    url = extract_url(message.text)
+    if not url:
+        return await message.answer("❌ Havola topilmadi.")
+    
+    print(f"DEBUG: Extracted URL for download: {url}")
     await state.clear()
-    wait_msg = await message.answer("📥 Video yuklanmoqda...")
+    wait_msg = await message.answer(f"📥 Yuklanmoqda...\n🔗 URL: {url[:30]}...")
     try:
         os.makedirs("temp", exist_ok=True)
         video_path = f"temp/{message.from_user.id}_d.mp4"
@@ -213,19 +234,23 @@ async def handle_download_direct(message: Message, state: FSMContext):
             await message.answer_video(video=FSInputFile(video_path), caption=FINAL_CAPTION)
             os.remove(video_path)
     except Exception as e:
-        await message.answer(f"❌ Xato: {str(e)}")
+        await message.answer(f"❌ Xatolik: {str(e)}")
     await wait_msg.delete()
     await message.answer("Menu:", reply_markup=main_keyboard)
 
 @dp.message(MixState.waiting_for_shazam)
 async def handle_shazam_direct(message: Message, state: FSMContext):
     await state.clear()
-    wait_msg = await message.answer("🔍 Musiqa tahlil qilinmoqda...")
+    wait_msg = await message.answer("🔍 Tahlil qilinmoqda...")
     try:
         os.makedirs("temp", exist_ok=True)
         temp_path = f"temp/{message.from_user.id}_s.mp3"
-        if message.text and "http" in message.text:
-            await download_audio(message.text, temp_path)
+        if message.text:
+            url = extract_url(message.text)
+            if url:
+                await download_audio(url, temp_path)
+            else:
+                return await message.answer("❌ Havola topilmadi.")
         elif message.audio or message.voice or message.video:
             file_id = message.audio.file_id if message.audio else (message.voice.file_id if message.voice else message.video.file_id)
             await bot.download(file_id, destination=temp_path)
@@ -242,7 +267,7 @@ async def handle_shazam_direct(message: Message, state: FSMContext):
             await message.answer("❌ Topilmadi.")
         if os.path.exists(temp_path): os.remove(temp_path)
     except Exception as e:
-        await message.answer(f"❌ Xato: {str(e)}")
+        await message.answer(f"❌ Xatolik: {str(e)}")
     await wait_msg.delete()
     await message.answer("Menu:", reply_markup=main_keyboard)
 
