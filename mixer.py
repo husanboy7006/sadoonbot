@@ -35,92 +35,88 @@ def _extract_shortcode(url: str) -> str:
     return match.group(2) if match else url.split("/")[-1]
 
 async def scrape_instagram(url: str):
-    """SnapInsta orqali Instagram videosini scraping qilish (Eng ishonchli yo'l)"""
-    print(f"[*] Scraping boshlandi: {url[:30]}...")
+    """SnapInsta orqali Instagram videosini scraping qilish"""
+    print(f"[*] Instagram Scraping boshlandi: {url[:30]}...")
     async with async_playwright() as p:
         try:
-            # Playwright brauzerini ishga tushirish
             browser = await p.chromium.launch(headless=True)
             context = await browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             )
             page = await context.new_page()
-            
-            # SnapInsta ga o'tish
             await page.goto("https://snapinsta.app/", timeout=60000)
             await page.fill("input#url", url)
             await page.click("button.btn-get")
-            
-            # Natijani kutish (reklamalarni kutish va h.k)
             try:
                 await page.wait_for_selector("div.download-items", timeout=20000)
                 download_btn = await page.query_selector("a.download-media")
                 if download_btn:
                     video_url = await download_btn.get_attribute("href")
                     if video_url and video_url.startswith("http"):
-                        print("[+] Scraper orqali video URL topildi.")
                         return video_url
             except:
-                print("[-] SnapInsta selector topilmadi yoki xato.")
-            
+                pass
             await browser.close()
         except Exception as e:
-            print(f"[-] Scraper error: {e}")
+            print(f"[-] Instagram Scraper error: {e}")
     return None
 
-async def get_cobalt_url(url: str, mode: str = "video") -> str:
-    """Cobalt API orqali media URL olish (mode: 'video' yoki 'audio')"""
-    api_urls = [
-        "https://api.cobalt.tools/api/json",
-        "https://cobalt-api.kwiateusz.xyz/api/json",
-        "https://cobalt.lonely-dev.xyz/api/json"
-    ]
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
-    }
-    data = {
-        "url": url,
-        "videoQuality": "720",
-        "downloadMode": mode,
-        "audioFormat": "mp3"
-    }
-    for api_url in api_urls:
+async def scrape_youtube(url: str):
+    """yt5s orqali YouTube videosini scraping qilish"""
+    print(f"[*] YouTube Scraping boshlandi: {url[:30]}...")
+    async with async_playwright() as p:
         try:
-            print(f"[*] Cobalt API ({mode}): {api_url}")
-            response = requests.post(api_url, json=data, headers=headers, timeout=15)
-            if response.status_code == 200:
-                res_data = response.json()
-                if "url" in res_data:
-                    return res_data["url"]
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            page = await context.new_page()
+            # yt5s.io yoki boshqalar orqali
+            await page.goto("https://yt5s.biz/en/", timeout=60000)
+            await page.fill("input#s_input", url)
+            await page.click("button.btn-red")
+            
+            try:
+                await page.wait_for_selector("div#search-result", timeout=20000)
+                # "Get Link" tugmasini bosish
+                await page.click("button#btn-action")
+                await page.wait_for_selector("a.btn-success", timeout=20000)
+                download_btn = await page.query_selector("a.btn-success")
+                if download_btn:
+                    video_url = await download_btn.get_attribute("href")
+                    if video_url and video_url.startswith("http"):
+                        return video_url
+            except:
+                pass
+            await browser.close()
         except Exception as e:
-            print(f"[-] API error ({api_url}): {e}")
+            print(f"[-] YouTube Scraper error: {e}")
     return None
 
 async def download_audio(url: str, output_path: str):
     """Har qanday video dan audio ajratib olish"""
     print(f"[*] Audio yuklanmoqda: {url[:30]}...")
     
-    # 1. Instagram bo'lsa avval Scraping orqali sinab ko'ramiz
+    # 1. Scraping fallbacks
+    video_url = None
     if "instagram.com" in url:
         video_url = await scrape_instagram(url)
-        if video_url:
-            try:
-                r = requests.get(video_url, stream=True, timeout=60)
-                # Vaqtinchalik videoni saqlaymiz va audio ajratamiz
-                temp_vid = output_path + ".temp.mp4"
-                with open(temp_vid, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
-                
-                # Audioga o'tkazish
-                audio = AudioSegment.from_file(temp_vid)
-                audio.export(output_path, format="mp3", bitrate="192k")
-                os.remove(temp_vid)
-                print("[+] Audio Scraper orqali yuklandi.")
-                return True
-            except:
-                pass
+    elif "youtube.com" in url or "youtu.be" in url:
+        video_url = await scrape_youtube(url)
+        
+    if video_url:
+        try:
+            r = requests.get(video_url, stream=True, timeout=60)
+            temp_vid = output_path + ".temp.mp4"
+            with open(temp_vid, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
+            audio = AudioSegment.from_file(temp_vid)
+            audio.export(output_path, format="mp3", bitrate="192k")
+            os.remove(temp_vid)
+            print("[+] Audio Scraper orqali yuklandi.")
+            return True
+        except:
+            pass
 
     # 2. Cobalt API
     audio_url = await get_cobalt_url(url, mode="audio")
@@ -134,7 +130,7 @@ async def download_audio(url: str, output_path: str):
         except:
             pass
 
-    # 3. yt-dlp fallback
+    # 3. yt-dlp fallback (Eng oxirgi yo'l)
     try:
         import yt_dlp
         ydl_opts = {
@@ -142,7 +138,8 @@ async def download_audio(url: str, output_path: str):
             'outtmpl': output_path.replace('.mp3', ''),
             'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
             'ffmpeg_location': ffmpeg_binary,
-            'quiet': True
+            'quiet': True,
+            'extractor_args': {'youtube': {'player_clients': ['ios', 'android', 'web_embedded']}}
         }
         if os.path.exists("cookies.txt"):
             ydl_opts['cookiefile'] = 'cookies.txt'
@@ -160,18 +157,22 @@ async def download_video(url: str, output_path: str):
     """Har qanday video yuklab olish"""
     print(f"[*] Video yuklanmoqda: {url[:30]}...")
     
-    # 1. Instagram bo'lsa Scraping (SnapInsta)
+    # 1. Scraping fallbacks
+    video_url = None
     if "instagram.com" in url:
         video_url = await scrape_instagram(url)
-        if video_url:
-            try:
-                r = requests.get(video_url, stream=True, timeout=60)
-                with open(output_path, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
-                print("[+] Video Scraper orqali yuklandi.")
-                return True
-            except:
-                pass
+    elif "youtube.com" in url or "youtu.be" in url:
+        video_url = await scrape_youtube(url)
+        
+    if video_url:
+        try:
+            r = requests.get(video_url, stream=True, timeout=60)
+            with open(output_path, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
+            print("[+] Video Scraper orqali yuklandi.")
+            return True
+        except:
+            pass
 
     # 2. Cobalt API
     video_url = await get_cobalt_url(url, mode="video")
@@ -192,7 +193,8 @@ async def download_video(url: str, output_path: str):
             'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
             'outtmpl': output_path,
             'ffmpeg_location': ffmpeg_binary,
-            'quiet': True
+            'quiet': True,
+            'extractor_args': {'youtube': {'player_clients': ['ios', 'android', 'web_embedded']}}
         }
         if os.path.exists("cookies.txt"):
             ydl_opts['cookiefile'] = 'cookies.txt'
@@ -203,6 +205,28 @@ async def download_video(url: str, output_path: str):
     except Exception as e:
         print(f"[-] yt-dlp video error: {e}")
         raise Exception(f"Video yuklab bo'lmadi.")
+
+async def get_cobalt_url(url: str, mode: str = "video") -> str:
+    """Cobalt API orqali media URL olish"""
+    api_urls = [
+        "https://api.cobalt.tools/api/json",
+        "https://cobalt-api.kwiateusz.xyz/api/json",
+        "https://cobalt.lonely-dev.xyz/api/json"
+    ]
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+    }
+    data = {"url": url, "videoQuality": "720", "downloadMode": mode, "audioFormat": "mp3"}
+    for api_url in api_urls:
+        try:
+            response = requests.post(api_url, json=data, headers=headers, timeout=15)
+            if response.status_code == 200:
+                res_data = response.json()
+                if "url" in res_data: return res_data["url"]
+        except: pass
+    return None
 
 def mix_image_audio(image_path: str, audio_path: str, output_path: str):
     """Rasm va Audioni birlashtiradi"""
