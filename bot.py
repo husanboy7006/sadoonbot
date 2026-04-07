@@ -155,7 +155,8 @@ async def command_start_handler(message: Message, state: FSMContext) -> None:
         "🎬 **Klip yasash** — Rasmingizga sevimli musiqangizni qo'shib video tayyorlash.\n"
         "📥 **Yuklab olish** — Instagram va TikTok videolarini yuklash.\n"
         "🔍 **Shazam** — Istalgan musiqani bir zumda topish.\n\n"
-        "**Nima qilmoqchimiz? Pastdan tanlang:** 👇"
+        "**Nima qilmoqchimiz? Pastdan tanlang:** 👇\n"
+        "🤖 @sadoon_ai_bot"
     )
 
     await message.answer(start_text, reply_markup=main_keyboard, parse_mode="Markdown")
