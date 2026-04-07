@@ -214,10 +214,11 @@ async def get_cobalt_url_custom(url, api_url, mode):
 def mix_image_audio(image_path: str, audio_path: str, output_path: str):
     print(f"[*] Mixing image + audio -> {output_path}")
     try:
-        # -crf 28 va -b:v 800k fayl hajmini sezilarli darajada kamaytiradi (rasm uchun yetarli)
+        # -preset ultrafast va -crf 28 tezlikni oshirish uchun
         cmd = [ffmpeg_binary, "-y", "-loop", "1", "-i", image_path, "-i", audio_path,
-               "-c:v", "libx264", "-crf", "28", "-b:v", "800k", "-tune", "stillimage", 
-               "-c:a", "aac", "-b:a", "128k", "-pix_fmt", "yuv420p", "-shortest", output_path]
+               "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28", "-b:v", "800k", 
+               "-tune", "stillimage", "-c:a", "aac", "-b:a", "128k", "-pix_fmt", "yuv420p", 
+               "-shortest", output_path]
         subprocess.run(cmd, check=True, capture_output=True)
         return True
     except subprocess.CalledProcessError as e:
@@ -225,12 +226,12 @@ def mix_image_audio(image_path: str, audio_path: str, output_path: str):
         raise Exception("Video yasashda xatolik yuz berdi (FFmpeg error).")
 
 async def compress_video(input_path: str, output_path: str):
-    """Katta videoni 50MB dan kamroq qilish uchun siqish"""
+    """Katta videoni ultrafast usulda siqish"""
     print(f"[*] Compressing video: {input_path}")
     try:
-        # Sifatni biroz pasaytirib siqamiz
-        cmd = [ffmpeg_binary, "-y", "-i", input_path, "-vcodec", "libx264", "-crf", "30", 
-               "-acodec", "aac", "-b:a", "128k", output_path]
+        # ultrafast bilan tezroq siqamiz
+        cmd = [ffmpeg_binary, "-y", "-i", input_path, "-vcodec", "libx264", "-preset", "ultrafast", 
+               "-crf", "30", "-acodec", "aac", "-b:a", "128k", output_path]
         process = await asyncio.create_subprocess_exec(*cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         await process.communicate()
         return process.returncode == 0
