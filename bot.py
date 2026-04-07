@@ -97,7 +97,7 @@ API_URL = os.getenv("API_URL", "http://127.0.0.1:7860/api/mix")
 FINAL_CAPTION = (
     "✅ **Bajarildi!**\n\n"
     "🎵 Klip yaratuvchi: Sadoon AI Bot\n"
-    "🔗 @sadoon_ai_bot\n\n"
+    "🔗 @sadoon\_ai\_bot\n\n"
     "Do'stlaringizga ham ulashing! 📲"
 )
 
@@ -156,7 +156,7 @@ async def command_start_handler(message: Message, state: FSMContext) -> None:
         "📥 **Yuklab olish** — Instagram va TikTok videolarini yuklash.\n"
         "🔍 **Shazam** — Istalgan musiqani bir zumda topish.\n\n"
         "**Nima qilmoqchimiz? Pastdan tanlang:** 👇\n"
-        "🤖 @sadoon_ai_bot"
+        "🤖 @sadoon\_ai\_bot"
     )
 
     await message.answer(start_text, reply_markup=main_keyboard, parse_mode="Markdown")
@@ -520,7 +520,7 @@ async def handle_shazam_direct(message: Message, state: FSMContext):
                     audio=FSInputFile(mp3_path),
                     title=track['title'],
                     performer=track['subtitle'],
-                    caption=f"🎵 {track['title']}\n🤖 @sadoon_ai_bot"
+                    caption=f"🎵 {track['title']}\n🤖 @sadoon\_ai\_bot"
                 )
                 os.remove(mp3_path)
                 # Success - update message to remove "searching..."
