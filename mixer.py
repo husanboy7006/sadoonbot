@@ -226,16 +226,29 @@ def mix_image_audio(image_path: str, audio_path: str, output_path: str):
         raise Exception("Video yasashda xatolik yuz berdi (FFmpeg error).")
 
 async def compress_video(input_path: str, output_path: str):
-    """Katta videoni ultrafast usulda siqish"""
-    print(f"[*] Compressing video: {input_path}")
+    """Katta videoni 720p ga tushirib, 1 ta yadroda tezkor siqish"""
+    print(f"[*] Compressing video (optimized): {input_path}")
     try:
-        # ultrafast bilan tezroq siqamiz
+        # Threads 1 va scale 720p RAM ni kam sarflaydi va tezroq bitadi
         cmd = [ffmpeg_binary, "-y", "-i", input_path, "-vcodec", "libx264", "-preset", "ultrafast", 
-               "-crf", "30", "-acodec", "aac", "-b:a", "128k", output_path]
+               "-crf", "30", "-vf", "scale='min(720,iw)':-2", "-threads", "1",
+               "-acodec", "aac", "-b:a", "128k", output_path]
         process = await asyncio.create_subprocess_exec(*cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        await process.communicate()
-        return process.returncode == 0
+        try:
+            # 5 daqiqali timeout
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
+            if process.returncode != 0:
+                print(f"[!] Compression failed: {stderr.decode()}")
+                return False
+            print(f"[+] Compression success -> {output_path}")
+            return True
+        except asyncio.TimeoutError:
+            print("[!] Compression timeout!")
+            process.kill()
+            return False
     except Exception as e:
+        print(f"[!] Compression error: {e}")
+        return False
         print(f"[!] Compression error: {e}")
         return False
 
