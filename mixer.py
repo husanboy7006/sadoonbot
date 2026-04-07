@@ -9,9 +9,9 @@ import json
 import socket
 import urllib.request
 import ssl
+import time
 from pydub import AudioSegment
 from shazamio import Shazam
-from playwright.async_api import async_playwright
 
 # [UNIVERSAL DNS PATCH] - Hugging Face dagi DNS muammolarini hal qilish
 ctx = ssl._create_unverified_context()
@@ -54,127 +54,157 @@ if os.path.exists("ffmpeg.exe"): ffmpeg_binary = os.path.abspath("ffmpeg.exe")
 elif shutil.which("ffmpeg"): ffmpeg_binary = shutil.which("ffmpeg")
 AudioSegment.converter = ffmpeg_binary
 
-async def scrape_instagram(url: str):
-    print(f"[*] Instagram Scraping: {url[:30]}...")
-    async with async_playwright() as p:
-        try:
-            browser = await p.chromium.launch(headless=True)
-            context = await browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-            page = await context.new_page()
-            await page.goto("https://snapinsta.app/", timeout=60000)
-            await page.fill("input#url", url)
-            await page.click("button.btn-get")
-            try:
-                await page.wait_for_selector("div.download-items", timeout=20000)
-                download_btn = await page.query_selector("a.download-media")
-                if download_btn: return await download_btn.get_attribute("href")
-            except: pass
-            await browser.close()
-        except: pass
-    return None
+# [STRATEGY 1] - RapidAPI va boshqa uchinchi tomon API-lari (Ehtiyoj bo'lsa)
+# Hozircha Cobalt va yt-dlp ni kuchaytiramiz
 
 async def download_tiktok_tikwm(url: str):
+    print(f"[*] TikTok (TikWM): {url[:30]}...")
     try:
         r = requests.post("https://www.tikwm.com/api/", data={'url': url}, timeout=15).json()
         if r.get('code') == 0: return "https://www.tikwm.com" + r['data']['play']
-    except: pass
+    except Exception as e:
+        print(f"[!] TikWM Error: {e}")
     return None
 
 async def download_audio(url: str, output_path: str):
+    print(f"[*] Audio yuklash: {url[:30]}...")
+    
+    # 1. TikTok uchun maxsus TikWM
     if "tiktok.com" in url:
         v_url = await download_tiktok_tikwm(url)
         if v_url and await download_directly(v_url, output_path + ".temp.mp4"):
-            AudioSegment.from_file(output_path + ".temp.mp4").export(output_path, format="mp3", bitrate="192k")
-            os.remove(output_path + ".temp.mp4")
-            return True
-    if "instagram.com" in url:
-        v_url = await scrape_instagram(url)
-        if v_url and await download_directly(v_url, output_path + ".temp.mp4"):
-            AudioSegment.from_file(output_path + ".temp.mp4").export(output_path, format="mp3", bitrate="192k")
-            os.remove(output_path + ".temp.mp4")
-            return True
-    for mirror in ["https://api.cobalt.tools/api/json", "https://cobalt-api.kwiateusz.xyz/api/json", "https://co.wuk.sh/api/json"]:
+            try:
+                AudioSegment.from_file(output_path + ".temp.mp4").export(output_path, format="mp3", bitrate="192k")
+                if os.path.exists(output_path + ".temp.mp4"): os.remove(output_path + ".temp.mp4")
+                return True
+            except: pass
+            
+    # 2. Cobalt API Fallbacks
+    cobalt_mirrors = [
+        "https://api.cobalt.tools/api/json",
+        "https://cobalt-api.kwiateusz.xyz/api/json",
+        "https://co.wuk.sh/api/json",
+        "https://cobalt.pervage.xyz/api/json"
+    ]
+    for mirror in cobalt_mirrors:
+        print(f"[*] Try Cobalt Mirror: {mirror}")
         a_url = await get_cobalt_url_custom(url, mirror, "audio")
-        if a_url and await download_directly(a_url, output_path): return True
+        if a_url and await download_directly(a_url, output_path): 
+            print("[+] Cobalt success!")
+            return True
+            
+    # 3. Yt-dlp (Instagram va barlar uchun oxirgi umid)
+    print("[*] Try yt-dlp fallback...")
     return await yt_dlp_download(url, output_path, is_audio=True)
 
 async def download_video(url: str, output_path: str):
+    print(f"[*] Video yuklash: {url[:30]}...")
+
+    # 1. TikTok uchun maxsus TikWM
     if "tiktok.com" in url:
         v_url = await download_tiktok_tikwm(url)
         if v_url and await download_directly(v_url, output_path): return True
-    if "instagram.com" in url:
-        v_url = await scrape_instagram(url)
-        if v_url and await download_directly(v_url, output_path): return True
-    for mirror in ["https://api.cobalt.tools/api/json", "https://cobalt-api.kwiateusz.xyz/api/json", "https://co.wuk.sh/api/json"]:
+        
+    # 2. Cobalt API Fallbacks
+    cobalt_mirrors = [
+        "https://api.cobalt.tools/api/json",
+        "https://cobalt-api.kwiateusz.xyz/api/json",
+        "https://co.wuk.sh/api/json",
+        "https://cobalt.pervage.xyz/api/json"
+    ]
+    for mirror in cobalt_mirrors:
+        print(f"[*] Try Cobalt Mirror: {mirror}")
         v_url = await get_cobalt_url_custom(url, mirror, "video")
-        if v_url and await download_directly(v_url, output_path): return True
+        if v_url and await download_directly(v_url, output_path): 
+            print("[+] Cobalt success!")
+            return True
+
+    # 3. Yt-dlp Fallback (Cookie bilan)
+    print("[*] Try yt-dlp fallback with cookies...")
     return await yt_dlp_download(url, output_path, is_audio=False)
 
 async def search_and_download_music(query: str, output_path: str):
-    """Musiqa nomiga ko'ra bir nechta manbalardan qidirib yuklash"""
-    print(f"[*] Musiqa qidirilmoqda (Multi-Search): {query}")
+    print(f"[*] Musiqa qidirilmoqda: {query}")
     
-    # Strategy 1: Vreden Music API (High stability)
+    # 1 va 2 - Vreden va Invidious (Avvalgi loyihada bor edi)
     try:
         r = requests.get(f"https://api.vreden.me/api/yt-search", params={"query": query}, timeout=10)
         if r.status_code == 200:
             data = r.json()
             if data.get('status') and data.get('data'):
                 v_url = data['data'][0]['url']
-                print(f"[+] Vreden orqali topildi: {v_url}")
                 if await download_audio(v_url, output_path): return True
     except: pass
 
-    # Strategy 2: Invidious Instances
-    instances = ["https://yewtu.be", "https://invidious.projectsegfau.lt", "https://iv.ggtyler.dev", "https://invidious.flokinet.to"]
-    v_id = None
+    # Invidious Search
+    instances = ["https://yewtu.be", "https://invidious.projectsegfau.lt", "https://iv.ggtyler.dev"]
     for inst in instances:
         try:
             r = requests.get(f"{inst}/api/v1/search", params={"q": query, "type": "video"}, timeout=10)
             if r.status_code == 200:
                 data = r.json()
                 if data and len(data) > 0:
-                    v_id = data[0]["videoId"]
-                    break
+                    v_url = f"https://www.youtube.com/watch?v={data[0]['videoId']}"
+                    if await download_audio(v_url, output_path): return True
         except: pass
     
-    if v_id:
-        url = f"https://www.youtube.com/watch?v={v_id}"
-        print(f"[+] Invidious orqali ID topildi: {v_id}")
-        if await download_audio(url, output_path): return True
-
-    # Strategy 3: Direct yt-dlp search
     return await yt_dlp_download(f"ytsearch1:{query}", output_path, is_audio=True)
 
 async def yt_dlp_download(url, output_path, is_audio=False):
+    print(f"[*] yt-dlp: {url[:30]} (Audio={is_audio})")
     try:
         import yt_dlp
         ydl_opts = {
             'format': 'bestaudio/best' if is_audio else 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
             'outtmpl': output_path.replace('.mp3', '') if is_audio else output_path,
-            'ffmpeg_location': ffmpeg_binary, 'quiet': True,
-            'extractor_args': {'youtube': {'player_clients': ['ios', 'android', 'web_embedded']}}
+            'ffmpeg_location': ffmpeg_binary,
+            'quiet': True,
+            'no_warnings': True,
+            'ignoreerrors': True,
+            'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+            'extractor_args': {'youtube': {'player_clients': ['web', 'android']}}
         }
-        if is_audio: ydl_opts['postprocessors'] = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl: ydl.download([url])
-        if is_audio and os.path.exists(output_path + ".mp3"): os.rename(output_path + ".mp3", output_path)
-        return True
-    except: return False
+        
+        # [IMPORTANT] - Cookies fayli bo'lsa uni ulaymiz
+        if os.path.exists("cookies.txt"):
+            print("[+] Using cookies.txt for authentication")
+            ydl_opts['cookiefile'] = "cookies.txt"
+            
+        if is_audio: 
+            ydl_opts['postprocessors'] = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
+            
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+            
+        # Natijani tekshirish
+        if is_audio:
+            if os.path.exists(output_path + ".mp3"):
+                if os.path.exists(output_path): os.remove(output_path)
+                os.rename(output_path + ".mp3", output_path)
+                return True
+            return os.path.exists(output_path)
+        return os.path.exists(output_path)
+    except Exception as e:
+        print(f"[!] yt-dlp error: {e}")
+        return False
 
 async def download_directly(url, path):
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
+        headers = {"User-Agent": "Mozilla/5.0 (iphone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"}
         r = requests.get(url, stream=True, timeout=60, verify=False, headers=headers)
+        if r.status_code != 200: return False
         with open(path, 'wb') as f:
             for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
         return True
-    except: return False
+    except Exception as e:
+        print(f"[!] Download directly error: {e}")
+        return False
 
 async def get_cobalt_url_custom(url, api_url, mode):
     headers = {"Accept": "application/json", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
     data = {"url": url, "videoQuality": "720", "downloadMode": mode, "audioFormat": "mp3"}
     try:
-        r = requests.post(api_url, json=data, headers=headers, timeout=10)
+        r = requests.post(api_url, json=data, headers=headers, timeout=15)
         if r.status_code == 200:
             res = r.json()
             if "url" in res: return res["url"]
@@ -182,15 +212,19 @@ async def get_cobalt_url_custom(url, api_url, mode):
     return None
 
 def mix_image_audio(image_path: str, audio_path: str, output_path: str):
+    print(f"[*] Mixing image + audio -> {output_path}")
     try:
         cmd = [ffmpeg_binary, "-y", "-loop", "1", "-i", image_path, "-i", audio_path,
                "-c:v", "libx264", "-tune", "stillimage", "-c:a", "aac", "-b:a", "192k",
                "-pix_fmt", "yuv420p", "-shortest", output_path]
         subprocess.run(cmd, check=True, capture_output=True)
         return True
-    except: raise Exception("Video yasashda xatolik yuz berdi.")
+    except subprocess.CalledProcessError as e:
+        print(f"[!] FFmpeg error: {e.stderr.decode()}")
+        raise Exception("Video yasashda xatolik yuz berdi (FFmpeg error).")
 
 async def identify_music(file_path: str):
+    print(f"[*] Shazam identifying: {file_path}")
     try:
         shazam = Shazam()
         out = await shazam.recognize(file_path)
@@ -198,4 +232,6 @@ async def identify_music(file_path: str):
         track = out['track']
         return {"title": track.get('title'), "subtitle": track.get('subtitle'), "url": track.get('url'),
                 "image": track.get('images', {}).get('coverarthq'), "shazam_url": track.get('share', {}).get('href')}
-    except: return None
+    except Exception as e:
+        print(f"[!] Shazam error: {e}")
+        return None

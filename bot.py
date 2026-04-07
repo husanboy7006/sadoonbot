@@ -419,79 +419,49 @@ async def handle_mix_link(message: Message, state: FSMContext):
         audio_path = f"temp/{message.from_user.id}_a.mp3"
 
         output_path = f"temp/{message.from_user.id}_out.mp4"
-
         
-
         await bot.download(photo_id, destination=photo_path)
-
-        await download_audio(url, audio_path)
-
-        mix_image_audio(photo_path, audio_path, output_path)
-
+        success = await download_audio(url, audio_path)
         
-
-        db.log_stats(message.from_user.id, "mix")
-
-        await message.answer_video(video=FSInputFile(output_path), caption=FINAL_CAPTION)
-
+        if success and os.path.exists(audio_path):
+            mix_image_audio(photo_path, audio_path, output_path)
+            db.log_stats(message.from_user.id, "mix")
+            await message.answer_video(video=FSInputFile(output_path), caption=FINAL_CAPTION)
+        else:
+            await message.answer("❌ Musiqa yuklab bo'lmadi. Havola noto'g'ri yoki videoni yuklab olishimiz cheklangan.")
         
-
         for f in [photo_path, audio_path, output_path]:
-
             if os.path.exists(f): os.remove(f)
-
     except Exception as e:
-
         await message.answer(f"❌ Xatolik: {str(e)}")
-
     
-
     await wait_msg.delete()
-
     await message.answer("Menu:", reply_markup=main_keyboard)
 
-
-
 @dp.message(MixState.waiting_for_downloader, F.text)
-
 async def handle_download_direct(message: Message, state: FSMContext):
-
     url = extract_url(message.text)
-
     if not url:
-
         return await message.answer("❌ Havola topilmadi.")
-
     
-
     print(f"DEBUG: Extracted URL for download: {url}")
-
     await state.clear()
-
     wait_msg = await message.answer(f"📥 Yuklanmoqda...\n🔗 URL: {url[:30]}...")
-
     try:
-
         os.makedirs("temp", exist_ok=True)
-
         video_path = f"temp/{message.from_user.id}_d.mp4"
-
-        await download_video(url, video_path)
-
+        success = await download_video(url, video_path)
         db.log_stats(message.from_user.id, "download")
-
-        if os.path.exists(video_path):
-
+        
+        if success and os.path.exists(video_path):
             await message.answer_video(video=FSInputFile(video_path), caption=FINAL_CAPTION)
-
             os.remove(video_path)
-
+        else:
+            await message.answer("❌ Videoni yuklab bo'lmadi. Instagram/TikTok bloklagan yoki havola noto'g'ri bo'lishi mumkin.")
     except Exception as e:
-
         await message.answer(f"❌ Xatolik: {str(e)}")
-
+    
     await wait_msg.delete()
-
     await message.answer("Menu:", reply_markup=main_keyboard)
 
 

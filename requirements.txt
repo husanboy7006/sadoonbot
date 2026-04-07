@@ -2,7 +2,6 @@ requests
 pydub
 shazamio
 yt-dlp
-playwright
 aiohttp
 uvicorn
 fastapi
