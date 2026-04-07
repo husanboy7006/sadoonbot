@@ -72,7 +72,7 @@ from aiogram.types import Message, FSInputFile, InlineKeyboardMarkup, InlineKeyb
 
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 
-from mixer import download_audio, mix_image_audio, identify_music, download_video, search_and_download_music
+from mixer import download_audio, mix_image_audio, identify_music, download_video, search_and_download_music, compress_video
 
 import database as db
 
@@ -426,6 +426,15 @@ async def handle_mix_link(message: Message, state: FSMContext):
         
         if success and os.path.exists(audio_path):
             mix_image_audio(photo_path, audio_path, output_path)
+            
+            # Fayl hajmini tekshirish (Telegram bot uchun limit 50MB)
+            file_size = os.path.getsize(output_path) / (1024 * 1024)
+            if file_size > 49:
+                await message.answer("⏳ Video hajmi katta, siqilmoqda...")
+                compressed_path = output_path.replace(".mp4", "_compressed.mp4")
+                if await compress_video(output_path, compressed_path):
+                    output_path = compressed_path
+            
             db.log_stats(message.from_user.id, "mix")
             await message.answer_video(video=FSInputFile(output_path), caption=FINAL_CAPTION)
         else:
@@ -455,8 +464,18 @@ async def handle_download_direct(message: Message, state: FSMContext):
         db.log_stats(message.from_user.id, "download")
         
         if success and os.path.exists(video_path):
+            # Fayl hajmini tekshirish
+            file_size = os.path.getsize(video_path) / (1024 * 1024)
+            if file_size > 49:
+                await message.answer("⏳ Video hajmi 50MB dan katta, yuborish uchun siqilmoqda...")
+                compressed_path = video_path.replace(".mp4", "_compressed.mp4")
+                if await compress_video(video_path, compressed_path):
+                    video_path = compressed_path
+            
             await message.answer_video(video=FSInputFile(video_path), caption=FINAL_CAPTION)
-            os.remove(video_path)
+            if os.path.exists(video_path): os.remove(video_path)
+            if "_compressed" in video_path and os.path.exists(video_path.replace("_compressed", "")):
+                os.remove(video_path.replace("_compressed", ""))
         else:
             await message.answer("❌ Videoni yuklab bo'lmadi. Instagram/TikTok bloklagan yoki havola noto'g'ri bo'lishi mumkin.")
     except Exception as e:
