@@ -94,7 +94,7 @@ GEMINI_KEY = "AIzaSyDl4kbccq-GUe9BP8Kwc-YTBDcXhszp5rw"
 
 # Gemini sozlamalari
 genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel('gemini-pro')
+model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
 # Tilmoch AI promtingiz
 GEMINI_PROMPT = """
@@ -656,8 +656,14 @@ async def handle_gemini_chat(message: Message, state: FSMContext):
 
 
 async def main():
-
     db.init_db()
+    
+    # Debug: Mavjud modellarni tekshirish
+    try:
+        available_models = [m.name for m in genai.list_models()]
+        print(f"[*] Available Gemini models: {available_models}")
+    except Exception as e:
+        print(f"[!] Could not list models: {e}")
 
     commands = [
 
