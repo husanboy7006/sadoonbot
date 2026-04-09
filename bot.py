@@ -94,7 +94,7 @@ GEMINI_KEY = "AIzaSyDl4kbccq-GUe9BP8Kwc-YTBDcXhszp5rw"
 
 # Gemini sozlamalari
 genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-pro')
 
 # Tilmoch AI promtingiz
 GEMINI_PROMPT = """
