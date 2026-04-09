@@ -165,7 +165,7 @@ main_keyboard = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="📥 Instagram / TikTok", callback_data="down_choice")],
     [
         InlineKeyboardButton(text="🔍 Musiqani topish", callback_data="shazam_choice"),
-        InlineKeyboardButton(text="🤖 Gemini AI Chat", callback_data="gemini_choice")
+        InlineKeyboardButton(text="🌐 Tilmoch AI", callback_data="gemini_choice")
     ],
     [
         InlineKeyboardButton(text="✍️ Takliflar", callback_data="feedback_choice"),
@@ -186,9 +186,10 @@ async def command_start_handler(message: Message, state: FSMContext) -> None:
     start_text = (
         "👋 **Salom! Men Sadoon AI botiman.**\n\n"
         "Men sizga quyidagi ishlarda yordam bera olaman:\n"
-        "🎬 **Klip yasash** — Rasmingizga sevimli musiqangizni qo'shib video tayyorlash.\n"
-        "📥 **Yuklab olish** — Instagram va TikTok videolarini yuklash.\n"
-        "🔍 **Shazam** — Istalgan musiqani bir zumda topish.\n\n"
+        "🎬 **Klip yasash** — Rasm va musiqani birlashtirib klip yaratish.\n"
+        "📥 **Yuklab olish** — Instagram va TikTok-dan media yuklash.\n"
+        "🔍 **Shazam** — Musiqalarni nomini aniqlash va topish.\n"
+        "🌐 **Tilmoch AI** — Professional audio va matn tarjimoni.\n\n"
         "**Nima qilmoqchimiz? Pastdan tanlang:** 👇\n"
         "🤖 @sadoon\_ai\_bot"
     )
@@ -601,7 +602,10 @@ async def handle_shazam_direct(message: Message, state: FSMContext):
 @dp.callback_query(F.data == "gemini_choice")
 async def gemini_choice_btn(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    await callback.message.answer("🤖 **Gemini AI rejimiga o'tdingiz.**\n\nIstalgan savolingizni bering yoki tarjima qilmoqchi bo'lgan matningizni yuboring:")
+    await callback.message.answer(
+        "🌐 **Tilmoch AI rejimiga o'tdingiz.**\n\n"
+        "Matn yozing yoki audio xabar yuboring, men uni Uzb-Rus-Chn tillarida professional tarjima qilib beraman:"
+    )
     await state.set_state(MixState.waiting_for_gemini)
 
 @dp.message(MixState.waiting_for_gemini, F.content_type.in_({'text', 'voice', 'audio'}))
