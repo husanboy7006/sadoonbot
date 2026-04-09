@@ -96,8 +96,29 @@ GEMINI_KEY = "AIzaSyDl4kbccq-GUe9BP8Kwc-YTBDcXhszp5rw"
 genai.configure(api_key=GEMINI_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash')
 
-# Sizning Gem-bot promtingiz (Hozircha placeholder)
-GEMINI_PROMPT = "Sen Sadoon AI botining aqlli yordamchisisan. Foydalanuvchilarga tarjima va boshqa masalalarda yordam berasan."
+# Tilmoch AI promtingiz
+GEMINI_PROMPT = """
+Sizning ismingiz: Tilmoch AI
+Rolingiz: O‘zbek, Rus va Xitoy tillari o‘rtasida professional darajadagi tezkor tarjima va audio tahlilni amalga oshirish.
+
+QOIDALAR:
+1. Hech qachon o‘zingizni tanishtirmang va kirish gaplari yozmang.
+2. Foydalanuvchi nima yuborsa ham darhol tarjimaga o‘ting, ortiqcha gap yozmang.
+3. Faqat tarjima bilan shug‘ullaning. Agar foydalanuvchi boshqa narsa so‘rasa: "Faqat tarjima bilan shug‘ullanaman." deb javob bering.
+
+QAYTA ISHLASH:
+- O‘zbekcha yozilsa: Rus va Xitoy tillariga tarjima qiling.
+- Ruscha yozilsa: O‘zbek tiliga tarjima qiling.
+- Xitoycha yozilsa: O‘zbek tiliga tarjima qiling.
+
+JAVOB FORMATI (QAT'IY SAQLANSIN):
+Original: [Matn]
+O‘zbekcha: [Matn]
+Ruscha: ```[Matn]```
+Xitoycha: ```[Matn]```
+Talaffuz: [Xitoycha Pinyin ohanglari bilan + o‘zbekcha o‘qilishi]
+Namuna javoblar: [2 ta mos javob varianti]
+"""
 
 
 
@@ -583,29 +604,52 @@ async def gemini_choice_btn(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer("🤖 **Gemini AI rejimiga o'tdingiz.**\n\nIstalgan savolingizni bering yoki tarjima qilmoqchi bo'lgan matningizni yuboring:")
     await state.set_state(MixState.waiting_for_gemini)
 
-@dp.message(MixState.waiting_for_gemini)
+@dp.message(MixState.waiting_for_gemini, F.content_type.in_({'text', 'voice', 'audio'}))
 async def handle_gemini_chat(message: Message, state: FSMContext):
-    if not message.text:
-        return await message.answer("❌ Iltimos, faqat matnli xabar yuboring.")
-    
     # "Menu" so'zi bo'lsa chiqib ketamiz
-    if message.text.lower() in ["menu", "/start", "back"]:
+    if message.text and message.text.lower() in ["menu", "/start", "back"]:
         await state.clear()
         return await message.answer("Bosh menyu:", reply_markup=main_keyboard)
 
-    wait_msg = await message.answer("⏳ Gemini o'ylamoqda...")
+    wait_msg = await message.answer("⏳ Tilmoch AI tahlil qilmoqda...")
     
     try:
-        # Chatni boshlash
-        chat = model.start_chat(history=[])
-        # System promptni birinchi xabarga qo'shish (agar tarix bo'sh bo'lsa)
-        full_prompt = f"{GEMINI_PROMPT}\n\nFoydalanuvchi: {message.text}"
-        response = chat.send_message(full_prompt)
+        content = []
+        # Tizimli ko'rsatmani qo'shamiz
+        content.append(GEMINI_PROMPT)
         
-        # Markdown xatolarni oldini olish uchun oddiy matn sifatida yuboramiz
-        await message.answer(response.text)
+        if message.text:
+            content.append(f"Foydalanuvchi matni: {message.text}")
+        
+        elif message.voice or message.audio:
+            # Audioni yuklab olish
+            file_id = message.voice.file_id if message.voice else message.audio.file_id
+            file = await bot.get_file(file_id)
+            
+            # Faylni xotiraga (memory) yuklaymiz (Diskga yozib o'tirmaymiz)
+            file_url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(file_url) as resp:
+                    if resp.status == 200:
+                        audio_data = await resp.read()
+                        content.append({
+                            "mime_type": "audio/ogg" if message.voice else "audio/mpeg",
+                            "data": audio_data
+                        })
+                    else:
+                        return await message.answer("❌ Audioni yuklab olishda xatolik yuz berdi.")
+        
+        # Jeneratsiya qilish
+        response = model.generate_content(content)
+        
+        # Javobni yuborish
+        if response.text:
+            await message.answer(response.text, parse_mode="Markdown")
+        else:
+            await message.answer("❌ Gemini javob bera olmadi.")
+            
     except Exception as e:
-        await message.answer(f"❌ Gemini xatoligi: {str(e)}")
+        await message.answer(f"❌ Tilmoch AI xatoligi: {str(e)}")
     
     await wait_msg.delete()
 
