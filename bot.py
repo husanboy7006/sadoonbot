@@ -642,9 +642,12 @@ async def handle_gemini_chat(message: Message, state: FSMContext):
         # Jeneratsiya qilish
         response = model.generate_content(content)
         
-        # Javobni yuborish
+        # Javobni yuborish (Markdown xatosi bo'lsa oddiy matn sifatida yuboramiz)
         if response.text:
-            await message.answer(response.text, parse_mode="Markdown")
+            try:
+                await message.answer(response.text, parse_mode="Markdown")
+            except:
+                await message.answer(response.text)
         else:
             await message.answer("❌ Gemini javob bera olmadi.")
             
