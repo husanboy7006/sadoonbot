@@ -637,7 +637,7 @@ async def handle_gemini_chat(message: Message, state: FSMContext):
                             "data": audio_data
                         })
                     else:
-                        return await message.answer("❌ Audioni yuklab olishda xatolik yuz berdi.")
+                        return await message.answer("❌ Audioni yuklab olishda xatolik yuz berdi.", parse_mode=None)
         
         # Jeneratsiya qilish
         response = model.generate_content(content)
@@ -647,12 +647,12 @@ async def handle_gemini_chat(message: Message, state: FSMContext):
             try:
                 await message.answer(response.text, parse_mode="Markdown")
             except:
-                await message.answer(response.text)
+                await message.answer(response.text, parse_mode=None)
         else:
-            await message.answer("❌ Gemini javob bera olmadi.")
+            await message.answer("❌ Gemini javob bera olmadi.", parse_mode=None)
             
     except Exception as e:
-        await message.answer(f"❌ Tilmoch AI xatoligi: {str(e)}")
+        await message.answer(f"❌ Tilmoch AI xatoligi: {str(e)}", parse_mode=None)
     
     await wait_msg.delete()
 
