@@ -8,3 +8,4 @@ fastapi
 python-multipart
 aiogram
 supabase
+google-generativeai

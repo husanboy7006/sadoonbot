@@ -75,6 +75,7 @@ from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 from mixer import download_audio, mix_image_audio, identify_music, download_video, search_and_download_music, compress_video
 
 import database as db
+import google.generativeai as genai
 
 
 
@@ -89,6 +90,14 @@ TOKEN = "8727075082:AAEQrVaA_S-D6wHy1URANE2NgLVMs5d7yXw"  # Asosiy bot
 # TOKEN = "8307406554:AAHgJXXn8PcQYvdJm65aDXXkw0SUSzSQNu8"  # Test boti
 
 API_URL = os.getenv("API_URL", "http://127.0.0.1:7860/api/mix")
+GEMINI_KEY = "AIzaSyDl4kbccq-GUe9BP8Kwc-YTBDcXhszp5rw"
+
+# Gemini sozlamalari
+genai.configure(api_key=GEMINI_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash')
+
+# Sizning Gem-bot promtingiz (Hozircha placeholder)
+GEMINI_PROMPT = "Sen Sadoon AI botining aqlli yordamchisisan. Foydalanuvchilarga tarjima va boshqa masalalarda yordam berasan."
 
 
 
@@ -124,6 +133,7 @@ class MixState(StatesGroup):
     waiting_for_feedback = State()
 
     waiting_for_broadcast = State()
+    waiting_for_gemini = State()
 
 
 
@@ -134,9 +144,12 @@ main_keyboard = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="📥 Instagram / TikTok", callback_data="down_choice")],
     [
         InlineKeyboardButton(text="🔍 Musiqani topish", callback_data="shazam_choice"),
-        InlineKeyboardButton(text="✍️ Takliflar", callback_data="feedback_choice")
+        InlineKeyboardButton(text="🤖 Gemini AI Chat", callback_data="gemini_choice")
     ],
-    [InlineKeyboardButton(text="🌐 Sadoon AI Sayti", url="https://sadoonbot.vercel.app/")]
+    [
+        InlineKeyboardButton(text="✍️ Takliflar", callback_data="feedback_choice"),
+        InlineKeyboardButton(text="🌐 Sadoon AI Sayti", url="https://sadoonbot.vercel.app/")
+    ]
 ])
 
 ADMIN_ID = 7110271171 
@@ -563,6 +576,38 @@ async def handle_shazam_direct(message: Message, state: FSMContext):
     await wait_msg.delete()
 
     await message.answer("Menu:", reply_markup=main_keyboard)
+
+@dp.callback_query(F.data == "gemini_choice")
+async def gemini_choice_btn(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await callback.message.answer("🤖 **Gemini AI rejimiga o'tdingiz.**\n\nIstalgan savolingizni bering yoki tarjima qilmoqchi bo'lgan matningizni yuboring:")
+    await state.set_state(MixState.waiting_for_gemini)
+
+@dp.message(MixState.waiting_for_gemini)
+async def handle_gemini_chat(message: Message, state: FSMContext):
+    if not message.text:
+        return await message.answer("❌ Iltimos, faqat matnli xabar yuboring.")
+    
+    # "Menu" so'zi bo'lsa chiqib ketamiz
+    if message.text.lower() in ["menu", "/start", "back"]:
+        await state.clear()
+        return await message.answer("Bosh menyu:", reply_markup=main_keyboard)
+
+    wait_msg = await message.answer("⏳ Gemini o'ylamoqda...")
+    
+    try:
+        # Chatni boshlash
+        chat = model.start_chat(history=[])
+        # System promptni birinchi xabarga qo'shish (agar tarix bo'sh bo'lsa)
+        full_prompt = f"{GEMINI_PROMPT}\n\nFoydalanuvchi: {message.text}"
+        response = chat.send_message(full_prompt)
+        
+        # Markdown xatolarni oldini olish uchun oddiy matn sifatida yuboramiz
+        await message.answer(response.text)
+    except Exception as e:
+        await message.answer(f"❌ Gemini xatoligi: {str(e)}")
+    
+    await wait_msg.delete()
 
 
 
