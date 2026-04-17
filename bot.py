@@ -101,7 +101,7 @@ Foydalanuvchi yuborgan mahsulot asosida HIGH-END, cinematic reklama RASM yaratis
 FINAL_CAPTION = (
     "✅ **Bajarildi!**\n\n"
     "🎵 Klip yaratuvchi: Sadoon AI Bot\n"
-    "🔗 @sadoon\_ai\_bot\n\n"
+    "🔗 @sadoon_ai_bot\n\n"
     "Do'stlaringizga ham ulashing! 📲"
 )
 
@@ -568,8 +568,69 @@ async def handle_shazam_direct(message: Message, state: FSMContext):
         await message.answer(f"❌ Xatolik: {str(e)}")
 
     await wait_msg.delete()
-
     await message.answer("Menu:", reply_markup=main_keyboard)
+
+@dp.callback_query(F.data == "gemini_choice")
+async def gemini_choice_btn(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await callback.message.answer(
+        "🌐 **Tilmoch AI rejimiga o'tdingiz.**\n\n"
+        "Matn yozing yoki audio xabar yuboring, men uni Uzb-Rus-Chn tillarida professional tarjima qilib beraman:"
+    )
+    await state.set_state(MixState.waiting_for_gemini)
+
+@dp.message(MixState.waiting_for_gemini, F.content_type.in_({'text', 'voice', 'audio'}))
+async def handle_gemini_chat(message: Message, state: FSMContext):
+    if message.text and message.text.lower() in ["menu", "/start", "back"]:
+        await state.clear()
+        return await message.answer("Bosh menyu:", reply_markup=main_keyboard)
+
+    wait_msg = await message.answer("⏳ Tilmoch AI tahlil qilmoqda...")
+    
+    try:
+        content = []
+        # Tizimli ko'rsatmani qo'shamiz
+        GEMINI_SYSTEM_PROMPT = """
+Sizning ismingiz: Tilmoch AI
+Rolingiz: O‘zbek, Rus va Xitoy tillari o‘rtasida professional darajadagi tezkor tarjima va audio tahlilni amalga oshirish.
+
+QOIDALAR:
+1. Hech qachon o‘zingizni tanishtirmang va kirish gaplari yozmang.
+2. Foydalanuvchi nima yuborsa ham darhol tarjimaga o‘ting, ortiqcha gap yozmang.
+3. Faqat tarjima bilan shug‘ullaning. Agar foydalanuvchi boshqa narsa so‘rasa: "Faqat tarjima bilan shug‘ullanaman." deb javob bering.
+
+QAYTA ISHLASH:
+- O‘zbekcha yozilsa: Rus va Xitoy tillariga tarjima qiling.
+- Ruscha yozilsa: O‘zbek tiliga tarjima qiling.
+- Xitoycha yozilsa: O‘zbek tiliga tarjima qiling.
+"""
+        content.append(GEMINI_SYSTEM_PROMPT)
+        
+        if message.text:
+            content.append(f"Foydalanuvchi matni: {message.text}")
+        elif message.voice or message.audio:
+            file_id = message.voice.file_id if message.voice else message.audio.file_id
+            file = await bot.get_file(file_id)
+            file_url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(file_url) as resp:
+                    if resp.status == 200:
+                        audio_data = await resp.read()
+                        content.append({"mime_type": "audio/ogg" if message.voice else "audio/mpeg", "data": audio_data})
+                    else:
+                        return await message.answer("❌ Audioni yuklab olishda xatolik yuz berdi.", parse_mode=None)
+        
+        response = model.generate_content(content)
+        
+        if response.text:
+            await message.answer(response.text, parse_mode=None)
+        else:
+            await message.answer("❌ Gemini javob bera olmadi.", parse_mode=None)
+            
+    except Exception as e:
+        await message.answer(f"❌ Tilmoch AI xatoligi: {str(e)}", parse_mode=None)
+    
+    await wait_msg.delete()
 
 # --- PREMIUM CGI & PAYMENT HANDLERS ---
 
@@ -691,9 +752,9 @@ async def handle_cgi_final(message: Message, state: FSMContext):
         
         if response.text:
             try:
-                await message.answer(response.text)
+                await message.answer(response.text, parse_mode=None)
             except:
-                await message.answer(response.text[:1000])
+                await message.answer(response.text[:1000], parse_mode=None)
                 
             # Kreditni faqat foydalanuvchidan ayiramiz (Admin bepul)
             if message.from_user.id != ADMIN_ID:
@@ -701,7 +762,7 @@ async def handle_cgi_final(message: Message, state: FSMContext):
                 
             db.log_stats(message.from_user.id, "cgi")
         else:
-            await message.answer("❌ CGI generatsiyasida xatolik yuz berdi.")
+            await message.answer("❌ CGI generatsiyasida xatolik yuz berdi.", parse_mode=None)
             
     except Exception as e:
         await message.answer(f"❌ Xatolik: {str(e)}")
