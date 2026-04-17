@@ -776,7 +776,7 @@ async def handle_cgi_final(message: Message, state: FSMContext):
             
             # Rasmni avval serverga yuklab olamiz (tayyor bo'lguncha kutish uchun)
             temp_cgi_path = f"temp/{message.from_user.id}_cgi.jpg"
-            timeout = aiohttp.ClientTimeout(total=60) # 60 soniya kutamiz
+            timeout = aiohttp.ClientTimeout(total=120) # 120 soniya (2 daqiqa) kutamiz
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 try:
                     async with session.get(image_url) as resp:
@@ -795,7 +795,7 @@ async def handle_cgi_final(message: Message, state: FSMContext):
                         else:
                             await message.answer("❌ Rasm yaratishda xatolik (API). Iltimos, qaytadan urinib ko'ring.")
                 except Exception as download_error:
-                    await message.answer(f"⏳ Rasm yaratish biroz cho'zildi. Iltimos, yana bir bor urinib ko'ring.")
+                    await message.answer(f"⏳ Rasm yaratish juda uzoq davom etdi (2 daqiqadan ko'p). Iltimos, server biroz bo'shagach qaytadan urinib ko'ring.")
             
             # Kreditni faqat foydalanuvchidan ayiramiz (Admin bepul)
             if message.from_user.id != ADMIN_ID:
