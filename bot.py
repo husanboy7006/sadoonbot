@@ -749,32 +749,43 @@ async def handle_cgi_final(message: Message, state: FSMContext):
             {"mime_type": "image/jpeg", "data": image_data}
         ]
         
-        # Nano Banana 2 (model_cgi) orqali rasm yaratamiz
-        response = model_cgi.generate_content(content)
+        # 1. Gemini orqali dizayn va inglizcha promt yaratamiz
+        # Promptga rasm yaratish uchun aniq ko'rsatma beramiz
+        reasoning_prompt = f"{CGI_PROMPT}\n\nFOYDALANUVCHI TANLOVI:\nVibe: {vibe}\nPlatforma: {plat}\n\nVAZIFA: Faqat va faqat ingliz tilida rasm yaratish uchun juda batafsil 'image generation prompt' qaytaring. Ortiqcha gap yozmang."
         
-        image_sent = False
+        response = model.generate_content([reasoning_prompt, {"mime_type": "image/jpeg", "data": image_data}])
         
-        # Javob ichidan rasmni qidiramiz
-        if response.candidates and response.candidates[0].content.parts:
-            for part in response.candidates[0].content.parts:
-                # Rasm inline_data sifatida kelsa
-                if hasattr(part, 'inline_data') and part.inline_data:
-                    from aiogram.types import BufferedInputFile
-                    image_file = BufferedInputFile(part.inline_data.data, filename="cgi_result.jpg")
-                    await message.answer_photo(photo=image_file, caption=f"🚀 **CGI Artist Natijasi**\nVibe: {vibe}\nPlatforma: {plat}")
-                    image_sent = True
-                    break
-                # Agar AI matn qaytarsa
-                elif hasattr(part, 'text') and part.text:
-                    await message.answer(part.text, parse_mode=None)
-
-        if image_sent:
+        if response.text:
+            ai_prompt = response.text.replace('"', '').replace('\n', ' ').strip()
+            
+            # Platforma o'lchamlari
+            dimensions = {
+                "Instagram (4:5)": (1080, 1350),
+                "Story (9:16)": (1080, 1920),
+                "Banner (16:9)": (1920, 1080),
+                "Poster": (1000, 1500)
+            }
+            width, height = dimensions.get(plat, (1024, 1024))
+            
+            # 2. Pollinations.ai orqali rasm olamiz (Flux modeli)
+            import urllib.parse
+            import random
+            seed = random.randint(1, 999999)
+            safe_prompt = urllib.parse.quote(ai_prompt)
+            image_url = f"https://pollinations.ai/p/{safe_prompt}?width={width}&height={height}&seed={seed}&model=flux"
+            
+            # Rasmni yuborish
+            await message.answer_photo(
+                photo=image_url, 
+                caption=f"🚀 **CGI Artist Natijasi** (Flux)\n🎨 Vibe: {vibe}\n📐 Platforma: {plat}\n\n_Dizayn: Gemini AI_"
+            )
+            
             # Kreditni faqat foydalanuvchidan ayiramiz (Admin bepul)
             if message.from_user.id != ADMIN_ID:
                 db.update_balance(message.from_user.id, -1)
             db.log_stats(message.from_user.id, "cgi")
-        elif not any(hasattr(part, 'text') and part.text for part in response.candidates[0].content.parts):
-            await message.answer("❌ CGI generatsiyasida rasm yaratib bo'lmadi. Iltimos, qaytadan urinib ko'ring.", parse_mode=None)
+        else:
+            await message.answer("❌ Gemini dizayn yarata olmadi. Iltimos, qaytadan urinib ko'ring.", parse_mode=None)
             
     except Exception as e:
         error_text = str(e)
