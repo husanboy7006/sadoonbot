@@ -1,8 +1,25 @@
-import socket
-import urllib.request
+import os
+import sys
 import json
 import ssl
+import socket
+import asyncio
+import urllib.request
+import aiohttp
+from aiogram import Bot, Dispatcher, F, types
+from aiogram.filters import CommandStart
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import Message, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BotCommand
+from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.default import DefaultBotProperties
 
+import database as db
+import google.generativeai as genai
+from mixer import download_audio, mix_image_audio, identify_music, download_video, search_and_download_music, compress_video
+
+# --- [UNIVERSAL DNS PATCH] ---
 ctx = ssl._create_unverified_context()
 old_getaddrinfo = socket.getaddrinfo
 dns_cache = {}
@@ -28,96 +45,53 @@ def new_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
                         ip = ans["data"]
                         dns_cache[host] = ip
                         return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', (ip, port))]
-    except Exception as e:
+    except:
         pass
-    
     return old_getaddrinfo(host, port, family, type, proto, flags)
 
 socket.getaddrinfo = new_getaddrinfo
 
-import socket
-
-# Telegram DNS DNS-resolution xatosini chetlab o'tish uchun monkey-patch
-import asyncio
-
-import os
-
-import aiohttp
-
-import sys
-
-
-
-# Windows terminalda Unicode (emoji) xatolarni oldini olish uchun
-
+# Windows terminal UTF-8 support
 if sys.stdout.encoding != 'utf-8':
-
     try:
-
         sys.stdout.reconfigure(encoding='utf-8')
-
     except AttributeError:
+        pass
 
-        pass # Eski python versiyalari uchun
-
-from aiogram import Bot, Dispatcher, F, types
-
-from aiogram.filters import CommandStart
-
-from aiogram.fsm.context import FSMContext
-
-from aiogram.fsm.state import State, StatesGroup
-
-from aiogram.types import Message, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BotCommand
-
-from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
-
-from mixer import download_audio, mix_image_audio, identify_music, download_video, search_and_download_music, compress_video
-
-import database as db
-import google.generativeai as genai
-
-
-
-from aiogram.client.session.aiohttp import AiohttpSession
-
-from aiogram.client.default import DefaultBotProperties
-
-
-
+# --- [SETTINGS] ---
 TOKEN = "8727075082:AAEQrVaA_S-D6wHy1URANE2NgLVMs5d7yXw"  # Asosiy bot
-
 # TOKEN = "8307406554:AAHgJXXn8PcQYvdJm65aDXXkw0SUSzSQNu8"  # Test boti
-
 API_URL = os.getenv("API_URL", "http://127.0.0.1:7860/api/mix")
-GEMINI_KEY = "AIzaSyDl4kbccq-GUe9BP8Kwc-YTBDcXhszp5rw"
+GEMINI_KEY = os.getenv("GEMINI_KEY", "AIzaSyDl4kbccq-GUe9BP8Kwc-YTBDcXhszp5rw")
 
 # Gemini sozlamalari
 genai.configure(api_key=GEMINI_KEY)
 model = genai.GenerativeModel('gemini-flash-lite-latest')
 
 # Tilmoch AI promtingiz
-GEMINI_PROMPT = """
-Sizning ismingiz: Tilmoch AI
-Rolingiz: O‘zbek, Rus va Xitoy tillari o‘rtasida professional darajadagi tezkor tarjima va audio tahlilni amalga oshirish.
+CGI_PROMPT = """
+Siz dunyo darajasidagi AI Product Visualization Director, CGI artist va reklama creative direktorisiz.
 
-QOIDALAR:
-1. Hech qachon o‘zingizni tanishtirmang va kirish gaplari yozmang.
-2. Foydalanuvchi nima yuborsa ham darhol tarjimaga o‘ting, ortiqcha gap yozmang.
-3. Faqat tarjima bilan shug‘ullaning. Agar foydalanuvchi boshqa narsa so‘rasa: "Faqat tarjima bilan shug‘ullanaman." deb javob bering.
+❗ SIZNING VAZIFANGIZ:
+Foydalanuvchi yuborgan mahsulot asosida HIGH-END, cinematic reklama RASM yaratish.
 
-QAYTA ISHLASH:
-- O‘zbekcha yozilsa: Rus va Xitoy tillariga tarjima qiling.
-- Ruscha yozilsa: O‘zbek tiliga tarjima qiling.
-- Xitoycha yozilsa: O‘zbek tiliga tarjima qiling.
+❗ MUHIM:
+- Siz PROMPT yozmaysiz
+- Siz FINAL RASM yaratasiz
+- Siz dizayner kabi fikrlaysiz
 
-JAVOB FORMATI (QAT'IY SAQLANSIN):
-Original: [Matn]
-O‘zbekcha: [Matn]
-Ruscha: ```[Matn]```
-Xitoycha: ```[Matn]```
-Talaffuz: [Xitoycha Pinyin ohanglari bilan + o‘zbekcha o‘qilishi]
-Namuna javoblar: [2 ta mos javob varianti]
+🌐 TIL QOIDASI (QAT’IY):
+- Har doim FAQAT O‘ZBEK TILIDA yozing
+- Qisqa va tushunarli yozing
+
+📥 INPUTLAR (MAJBURIY):
+1. 📸 Mahsulot rasmi
+2. 🎨 Vibe (faqat raqam bilan): 1=luxury, 2=fresh, 3=dark, 4=minimal, 5=energetic
+3. 📐 Platforma (faqat raqam bilan): 1=instagram, 2=story, 3=banner, 4=poster
+
+🚫 AGAR INPUT TO‘LIQ BO‘LMASA:
+- Rasm yaratma
+- Faqat yetishmayotgan qismini so‘ra
 """
 
 
@@ -131,30 +105,21 @@ FINAL_CAPTION = (
     "Do'stlaringizga ham ulashing! 📲"
 )
 
-
-
 session = AiohttpSession(timeout=60)
-
 bot = Bot(token=TOKEN, session=session, default=DefaultBotProperties(parse_mode='Markdown'))
-
 dp = Dispatcher()
 
-
-
 class MixState(StatesGroup):
-
     waiting_for_photo = State()
-
     waiting_for_link = State()
-
     waiting_for_downloader = State()
-
     waiting_for_shazam = State()
-
     waiting_for_feedback = State()
-
     waiting_for_broadcast = State()
     waiting_for_gemini = State()
+    waiting_for_cgi_photo = State()
+    waiting_for_cgi_choices = State()
+    waiting_for_payment_proof = State()
 
 
 
@@ -162,16 +127,23 @@ class MixState(StatesGroup):
 
 main_keyboard = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="🎬 Klip yasash (🖼 rasm + 🎵 musiqa)", callback_data="mix_choice")],
-    [InlineKeyboardButton(text="📥 Instagram / TikTok", callback_data="down_choice")],
+    [InlineKeyboardButton(text="🚀 CGI Product Artist (Premium)", callback_data="cgi_choice")],
     [
-        InlineKeyboardButton(text="🔍 Musiqani topish", callback_data="shazam_choice"),
-        InlineKeyboardButton(text="🌐 Tilmoch AI", callback_data="gemini_choice")
+        InlineKeyboardButton(text="📥 Yuklab olish", callback_data="down_choice"),
+        InlineKeyboardButton(text="🔍 Shazam", callback_data="shazam_choice")
+    ],
+    [
+        InlineKeyboardButton(text="🌐 Tilmoch AI", callback_data="gemini_choice"),
+        InlineKeyboardButton(text="👤 Balans", callback_data="balance_info")
     ],
     [
         InlineKeyboardButton(text="✍️ Takliflar", callback_data="feedback_choice"),
-        InlineKeyboardButton(text="🌐 Sadoon AI Sayti", url="https://sadoonbot.vercel.app/")
+        InlineKeyboardButton(text="💰 To'ldirish", callback_data="fill_balance")
     ]
 ])
+
+CARD_DATA = "💳 8600 0000 0000 0000\n👤 Ism Familiya"
+PRICE_PER_CGI = "5 000 UZS"
 
 ADMIN_ID = 7110271171 
 
@@ -460,7 +432,7 @@ async def handle_mix_link(message: Message, state: FSMContext):
         success = await download_audio(url, audio_path)
         
         if success and os.path.exists(audio_path):
-            mix_image_audio(photo_path, audio_path, output_path)
+            await mix_image_audio(photo_path, audio_path, output_path)
             
             # Fayl hajmini tekshirish (Telegram bot uchun limit 50MB)
             file_size = os.path.getsize(output_path) / (1024 * 1024)
@@ -599,68 +571,141 @@ async def handle_shazam_direct(message: Message, state: FSMContext):
 
     await message.answer("Menu:", reply_markup=main_keyboard)
 
-@dp.callback_query(F.data == "gemini_choice")
-async def gemini_choice_btn(callback: CallbackQuery, state: FSMContext):
+# --- PREMIUM CGI & PAYMENT HANDLERS ---
+
+@dp.callback_query(F.data == "balance_info")
+async def balance_info_handler(callback: CallbackQuery):
+    balance = db.get_user_balance(callback.from_user.id)
     await callback.answer()
-    await callback.message.answer(
-        "🌐 **Tilmoch AI rejimiga o'tdingiz.**\n\n"
-        "Matn yozing yoki audio xabar yuboring, men uni Uzb-Rus-Chn tillarida professional tarjima qilib beraman:"
+    await callback.message.answer(f"👤 **Sizning balansingiz:** {balance} kredit\n\n"
+                                f"🚀 *CGI Product Artist* xizmati uchun har bir urinish 1 kredit sarflaydi.")
+
+@dp.callback_query(F.data == "fill_balance")
+async def fill_balance_handler(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    text = (
+        f"💰 **Hisobni to'ldirish**\n\n"
+        f"1 ta kredit narxi: {PRICE_PER_CGI}\n"
+        f"Quyidagi kartaga to'lovni amalga oshiring:\n\n"
+        f"`{CARD_DATA}`\n\n"
+        f"To'lovdan so'ng chekni (skrinshotni) shu botga yuboring. Admin tasdiqlagach, kredit hisobingizga qo'shiladi."
     )
-    await state.set_state(MixState.waiting_for_gemini)
+    await callback.message.answer(text, parse_mode="Markdown")
+    await state.set_state(MixState.waiting_for_payment_proof)
 
-@dp.message(MixState.waiting_for_gemini, F.content_type.in_({'text', 'voice', 'audio'}))
-async def handle_gemini_chat(message: Message, state: FSMContext):
-    # "Menu" so'zi bo'lsa chiqib ketamiz
-    if message.text and message.text.lower() in ["menu", "/start", "back"]:
-        await state.clear()
-        return await message.answer("Bosh menyu:", reply_markup=main_keyboard)
+@dp.message(MixState.waiting_for_payment_proof, F.photo)
+async def handle_payment_proof(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("✅ Rahmat! Chekingiz adminga yuborildi. Tasdiqlashni kuting.")
+    
+    admin_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Tasdiqlash (+1)", callback_data=f"confirm_pay_{message.from_user.id}_1")],
+        [InlineKeyboardButton(text="✅ Tasdiqlash (+5)", callback_data=f"confirm_pay_{message.from_user.id}_5")],
+        [InlineKeyboardButton(text="❌ Rad etish", callback_data=f"reject_pay_{message.from_user.id}")]
+    ])
+    
+    user_info = f"👤 Mijoz: {message.from_user.full_name}\n🆔 ID: `{message.from_user.id}`"
+    await bot.send_photo(ADMIN_ID, message.photo[-1].file_id, caption=f"💰 **Yangi to'lov cheki!**\n\n{user_info}", reply_markup=admin_kb)
 
-    wait_msg = await message.answer("⏳ Tilmoch AI tahlil qilmoqda...")
+@dp.callback_query(F.data.startswith("confirm_pay_"))
+async def confirm_payment_callback(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID: return
+    _, _, user_id, amount = callback.data.split("_")
+    user_id = int(user_id)
+    amount = int(amount)
+    
+    if db.update_balance(user_id, amount):
+        await callback.message.edit_caption(caption=callback.message.caption + f"\n\n✅ **TASDIQLANDI!** (+{amount} kredit)")
+        await bot.send_message(user_id, f"🎉 **Xushxabar!** To'lovingiz tasdiqlandi. Hisobingizga {amount} ta kredit qo'shildi.")
+    else:
+        await callback.answer("Xatolik yuz berdi")
+
+@dp.callback_query(F.data.startswith("reject_pay_"))
+async def reject_payment_callback(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID: return
+    user_id = int(callback.data.split("_")[2])
+    await callback.message.edit_caption(caption=callback.message.caption + "\n\n❌ **RAD ETILDI!**")
+    await bot.send_message(user_id, "❌ Uzr, to'lovingiz rad etildi. Iltimos, ma'lumotlarni tekshirib qaytadan urinib ko'ring yoki adminga murojaat qiling.")
+
+@dp.callback_query(F.data == "cgi_choice")
+async def cgi_choice_handler(callback: CallbackQuery, state: FSMContext):
+    balance = db.get_user_balance(callback.from_user.id)
+    if balance < 1:
+        await callback.answer("Balansingiz yetarli emas!", show_alert=True)
+        return await fill_balance_handler(callback, state)
+        
+    await callback.answer()
+    await callback.message.answer("🚀 **Premium CGI Product Artist** rejimiga xush kelibsiz!\n\n📸 Birinchi navbatda mahsulot rasmini yuboring:")
+    await state.set_state(MixState.waiting_for_cgi_photo)
+
+@dp.message(MixState.waiting_for_cgi_photo, F.photo)
+async def handle_cgi_photo(message: Message, state: FSMContext):
+    photo_id = message.photo[-1].file_id
+    await state.update_data(cgi_photo=photo_id)
+    
+    text = (
+        "🎨 **Vibe tanlang:**\n1️⃣ Luxury, 2️⃣ Fresh, 3️⃣ Dark, 4️⃣ Minimal, 5️⃣ Energetic\n\n"
+        "📐 **Platforma tanlang:**\n1️⃣ Instagram, 2️⃣ Story, 3️⃣ Banner, 4️⃣ Poster\n\n"
+        "✍️ Misol: `1 2` (Luxury vibe, Story platforma)"
+    )
+    await message.answer(text, parse_mode="Markdown")
+    await state.set_state(MixState.waiting_for_cgi_choices)
+
+@dp.message(MixState.waiting_for_cgi_choices, F.text)
+async def handle_cgi_final(message: Message, state: FSMContext):
+    data = await state.get_data()
+    photo_id = data.get("cgi_photo")
+    choices = message.text.split()
+    
+    if len(choices) < 2:
+        return await message.answer("Iltimos, vibe va platformani tanlang (masalan: `1 2`)")
+
+    vibe_map = {"1": "Luxury", "2": "Fresh", "3": "Dark", "4": "Minimal", "5": "Energetic"}
+    plat_map = {"1": "Instagram (4:5)", "2": "Story (9:16)", "3": "Banner (16:9)", "4": "Poster"}
+    
+    vibe = vibe_map.get(choices[0], "Luxury")
+    plat = plat_map.get(choices[1], "Instagram")
+    
+    await state.clear()
+    wait_msg = await message.answer("⏳ **CGI Artist ishlamoqda...**\nBu biroz vaqt olishi mumkin.")
     
     try:
-        content = []
-        # Tizimli ko'rsatmani qo'shamiz
-        content.append(GEMINI_PROMPT)
+        # Multimodal Gemini call
+        file = await bot.get_file(photo_id)
+        file_url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
         
-        if message.text:
-            content.append(f"Foydalanuvchi matni: {message.text}")
+        async with aiohttp.ClientSession() as session:
+            async with session.get(file_url) as resp:
+                image_data = await resp.read()
         
-        elif message.voice or message.audio:
-            # Audioni yuklab olish
-            file_id = message.voice.file_id if message.voice else message.audio.file_id
-            file = await bot.get_file(file_id)
-            
-            # Faylni xotiraga (memory) yuklaymiz (Diskga yozib o'tirmaymiz)
-            file_url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
-            async with aiohttp.ClientSession() as session:
-                async with session.get(file_url) as resp:
-                    if resp.status == 200:
-                        audio_data = await resp.read()
-                        content.append({
-                            "mime_type": "audio/ogg" if message.voice else "audio/mpeg",
-                            "data": audio_data
-                        })
-                    else:
-                        return await message.answer("❌ Audioni yuklab olishda xatolik yuz berdi.", parse_mode=None)
+        prompt_with_choices = f"{CGI_PROMPT}\n\nFOYDALANUVCHI TANLOVI:\nVibe: {vibe}\nPlatforma: {plat}"
         
-        # Jeneratsiya qilish
+        content = [
+            prompt_with_choices,
+            {"mime_type": "image/jpeg", "data": image_data}
+        ]
+        
         response = model.generate_content(content)
         
-        # Javobni yuborish (Markdown xatosi bo'lsa oddiy matn sifatida yuboramiz)
         if response.text:
+            # CGI Artist logic typically returns images, but we handle text if AI responds with description
+            # FOR DEMO: using same photo or description. Real implementation needs Imagen/DALL-E API.
             try:
-                await message.answer(response.text, parse_mode="Markdown")
+                await message.answer(response.text)
             except:
-                await message.answer(response.text, parse_mode=None)
+                await message.answer(response.text[:1000])
+                
+            # Kreditni ayirish
+            db.update_balance(message.from_user.id, -1)
+            db.log_stats(message.from_user.id, "cgi")
         else:
-            await message.answer("❌ Gemini javob bera olmadi.", parse_mode=None)
+            await message.answer("❌ CGI generatsiyasida xatolik yuz berdi.")
             
     except Exception as e:
-        await message.answer(f"❌ Tilmoch AI xatoligi: {str(e)}", parse_mode=None)
+        await message.answer(f"❌ Xatolik: {str(e)}")
     
     await wait_msg.delete()
-
-
+    await message.answer("Menu:", reply_markup=main_keyboard)
 
 async def main():
     db.init_db()

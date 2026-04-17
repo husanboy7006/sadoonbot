@@ -5,6 +5,7 @@ import sys
 import subprocess
 import shutil
 import asyncio
+import aiohttp
 import json
 import socket
 import urllib.request
@@ -60,8 +61,10 @@ AudioSegment.converter = ffmpeg_binary
 async def download_tiktok_tikwm(url: str):
     print(f"[*] TikTok (TikWM): {url[:30]}...")
     try:
-        r = requests.post("https://www.tikwm.com/api/", data={'url': url}, timeout=15).json()
-        if r.get('code') == 0: return "https://www.tikwm.com" + r['data']['play']
+        async with aiohttp.ClientSession() as session:
+            async with session.post("https://www.tikwm.com/api/", data={'url': url}, timeout=15) as response:
+                r = await response.json()
+                if r.get('code') == 0: return "https://www.tikwm.com" + r['data']['play']
     except Exception as e:
         print(f"[!] TikWM Error: {e}")
     return None
@@ -126,26 +129,28 @@ async def download_video(url: str, output_path: str):
 async def search_and_download_music(query: str, output_path: str):
     print(f"[*] Musiqa qidirilmoqda: {query}")
     
-    # 1 va 2 - Vreden va Invidious (Avvalgi loyihada bor edi)
+    # 1 va 2 - Vreden va Invidious
     try:
-        r = requests.get(f"https://api.vreden.me/api/yt-search", params={"query": query}, timeout=10)
-        if r.status_code == 200:
-            data = r.json()
-            if data.get('status') and data.get('data'):
-                v_url = data['data'][0]['url']
-                if await download_audio(v_url, output_path): return True
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"https://api.vreden.me/api/yt-search", params={"query": query}, timeout=10) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    if data.get('status') and data.get('data'):
+                        v_url = data['data'][0]['url']
+                        if await download_audio(v_url, output_path): return True
     except: pass
 
     # Invidious Search
     instances = ["https://yewtu.be", "https://invidious.projectsegfau.lt", "https://iv.ggtyler.dev"]
     for inst in instances:
         try:
-            r = requests.get(f"{inst}/api/v1/search", params={"q": query, "type": "video"}, timeout=10)
-            if r.status_code == 200:
-                data = r.json()
-                if data and len(data) > 0:
-                    v_url = f"https://www.youtube.com/watch?v={data[0]['videoId']}"
-                    if await download_audio(v_url, output_path): return True
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{inst}/api/v1/search", params={"q": query, "type": "video"}, timeout=10) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if data and len(data) > 0:
+                            v_url = f"https://www.youtube.com/watch?v={data[0]['videoId']}"
+                            if await download_audio(v_url, output_path): return True
         except: pass
     
     return await yt_dlp_download(f"ytsearch1:{query}", output_path, is_audio=True)
@@ -189,13 +194,20 @@ async def yt_dlp_download(url, output_path, is_audio=False):
         return False
 
 async def download_directly(url, path):
+    print(f"[*] Downloading directly: {url[:30]}...")
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (iphone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"}
-        r = requests.get(url, stream=True, timeout=60, verify=False, headers=headers)
-        if r.status_code != 200: return False
-        with open(path, 'wb') as f:
-            for chunk in r.iter_content(chunk_size=8192): f.write(chunk)
-        return True
+        headers = {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"}
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, timeout=300) as response:
+                if response.status != 200:
+                    return False
+                with open(path, 'wb') as f:
+                    while True:
+                        chunk = await response.content.read(8192)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                return True
     except Exception as e:
         print(f"[!] Download directly error: {e}")
         return False
@@ -204,26 +216,33 @@ async def get_cobalt_url_custom(url, api_url, mode):
     headers = {"Accept": "application/json", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
     data = {"url": url, "videoQuality": "720", "downloadMode": mode, "audioFormat": "mp3"}
     try:
-        r = requests.post(api_url, json=data, headers=headers, timeout=15)
-        if r.status_code == 200:
-            res = r.json()
-            if "url" in res: return res["url"]
+        async with aiohttp.ClientSession() as session:
+            async with session.post(api_url, json=data, headers=headers, timeout=15) as response:
+                if response.status == 200:
+                    res = await response.json()
+                    if "url" in res: return res["url"]
     except: pass
     return None
 
-def mix_image_audio(image_path: str, audio_path: str, output_path: str):
-    print(f"[*] Mixing image + audio -> {output_path}")
+async def mix_image_audio(image_path: str, audio_path: str, output_path: str):
+    print(f"[*] Mixing image + audio (async) -> {output_path}")
     try:
         # -preset ultrafast va -crf 28 tezlikni oshirish uchun
         cmd = [ffmpeg_binary, "-y", "-loop", "1", "-i", image_path, "-i", audio_path,
                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28", "-b:v", "800k", 
                "-tune", "stillimage", "-c:a", "aac", "-b:a", "128k", "-pix_fmt", "yuv420p", 
                "-shortest", output_path]
-        subprocess.run(cmd, check=True, capture_output=True)
+        
+        process = await asyncio.create_subprocess_exec(*cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stderr = await process.communicate()
+        
+        if process.returncode != 0:
+            print(f"[!] FFmpeg error: {stderr.decode()}")
+            raise Exception("Video yasashda xatolik yuz berdi (FFmpeg error).")
         return True
-    except subprocess.CalledProcessError as e:
-        print(f"[!] FFmpeg error: {e.stderr.decode()}")
-        raise Exception("Video yasashda xatolik yuz berdi (FFmpeg error).")
+    except Exception as e:
+        print(f"[!] Mix error: {e}")
+        raise e
 
 async def compress_video(input_path: str, output_path: str):
     """Katta videoni 720p ga tushirib, 1 ta yadroda tezkor siqish"""

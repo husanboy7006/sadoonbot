@@ -18,6 +18,39 @@ else:
 def init_db():
     pass
 
+def get_user_balance(user_id):
+    if not supabase: return 0
+    try:
+        res = supabase.table("users").select("balance").eq("user_id", user_id).execute()
+        if res.data:
+            data = res.data[0]
+            return data.get("balance", 0)
+    except Exception as e:
+        print(f"Error getting balance: {e}")
+    return 0
+
+def update_balance(user_id, amount):
+    if not supabase: return False
+    try:
+        current = get_user_balance(user_id)
+        new_balance = current + amount
+        if new_balance < 0: return False
+        
+        supabase.table("users").update({"balance": new_balance}).eq("user_id", user_id).execute()
+        return True
+    except Exception as e:
+        print(f"Error updating balance: {e}")
+        return False
+
+def set_balance(user_id, amount):
+    if not supabase: return False
+    try:
+        supabase.table("users").update({"balance": amount}).eq("user_id", user_id).execute()
+        return True
+    except Exception as e:
+        print(f"Error setting balance: {e}")
+        return False
+
 def add_user(user_id, username):
     if not supabase: return
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
