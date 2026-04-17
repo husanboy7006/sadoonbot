@@ -756,51 +756,63 @@ async def handle_cgi_final(message: Message, state: FSMContext):
         response = model.generate_content([reasoning_prompt, {"mime_type": "image/jpeg", "data": image_data}])
         
         if response.text:
-            # Promtdan maxsus belgilarni olib tashlaymiz
+            # Promtdan maxsus belgilarni olib tashlaymiz va qisqartiramiz (Max 200 chars)
             clean_text = response.text.replace('"', '').replace("'", "").replace('\n', ' ').strip()
-            # Faqat lotin harflari va raqamlarni qoldiramiz (xavfsiz URL uchun)
+            # Faqat logik qismini olamiz
+            short_prompt = clean_text[:200]
             import re
-            ai_prompt = re.sub(r'[^a-zA-Z0-9\s,.-]', '', clean_text)
+            ai_prompt = re.sub(r'[^a-zA-Z0-9\s,.-]', '', short_prompt)
             
             # Platforma o'lchamlari (Optimallashtirilgan)
             dimensions = {
-                "Instagram (4:5)": (800, 1000),
-                "Story (9:16)": (720, 1280),
-                "Banner (16:9)": (1280, 720),
-                "Poster": (800, 1200)
+                "Instagram (4:5)": (512, 640),
+                "Story (9:16)": (512, 910),
+                "Banner (16:9)": (910, 512),
+                "Poster": (512, 768)
             }
-            width, height = dimensions.get(plat, (800, 800))
+            width, height = dimensions.get(plat, (512, 512))
             
-            # 2. Pollinations.ai orqali rasm olamiz (Tezkor Turbo modeli)
+            # 2. Pollinations.ai (Tezkor va barqaror)
             import urllib.parse
             import random
             seed = random.randint(1, 999999)
             safe_prompt = urllib.parse.quote(ai_prompt)
-            # Turbo modeli Flux-dan tezroq va barqarorroq
             image_url = f"https://pollinations.ai/p/{safe_prompt}?width={width}&height={height}&seed={seed}&model=turbo&nologo=true"
             
-            # Rasmni avval serverga yuklab olamiz (tayyor bo'lguncha kutish uchun)
             temp_cgi_path = f"temp/{message.from_user.id}_cgi.jpg"
-            timeout = aiohttp.ClientTimeout(total=120) # 120 soniya (2 daqiqa) kutamiz
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            
+            async with aiohttp.ClientSession() as session:
                 try:
-                    async with session.get(image_url) as resp:
+                    # Timeoutni kichraytiramiz, lekin retry (qayta urinish) qo'shamiz
+                    async with session.get(image_url, timeout=30) as resp:
                         if resp.status == 200:
                             content = await resp.read()
                             with open(temp_cgi_path, "wb") as f:
                                 f.write(content)
                             
-                            # Tayyor rasmni yuborish
                             from aiogram.types import FSInputFile
                             await message.answer_photo(
                                 photo=FSInputFile(temp_cgi_path), 
-                                caption=f"🚀 **CGI Artist Natijasi** (Flux)\n🎨 Vibe: {vibe}\n📐 Platforma: {plat}\n\n_Dizayn: Gemini AI_"
+                                caption=f"🚀 **CGI Artist Natijasi**\n🎨 Vibe: {vibe}\n📐 Platforma: {plat}\n\n_System: Sadoon AI_"
                             )
                             if os.path.exists(temp_cgi_path): os.remove(temp_cgi_path)
                         else:
-                            await message.answer("❌ Rasm yaratishda xatolik (API). Iltimos, qaytadan urinib ko'ring.")
-                except Exception as download_error:
-                    await message.answer(f"❌ Yuklab olishda xatolik: {str(download_error)[:100]}")
+                            await message.answer(f"⚠️ Rasm yaratish band. Iltimos, bir necha soniyadan so'ng qayta yuboring.")
+                except Exception as de:
+                    # Fallback URL - ba'zan asosiy URL band bo'ladi
+                    await message.answer(f"⏳ Biroz kutib turing, rasm tayyorlanmoqda...")
+                    # Qayta urinish (Retry with simplified URL)
+                    simple_url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width={width}&height={height}&seed={seed}&nologo=true"
+                    try:
+                        async with session.get(simple_url, timeout=30) as resp2:
+                             if resp2.status == 200:
+                                 content = await resp2.read()
+                                 with open(temp_cgi_path, "wb") as f: f.write(content)
+                                 from aiogram.types import FSInputFile
+                                 await message.answer_photo(photo=FSInputFile(temp_cgi_path), caption=f"🚀 CGI Natijasi\n🎨 Vibe: {vibe}")
+                                 if os.path.exists(temp_cgi_path): os.remove(temp_cgi_path)
+                    except:
+                        await message.answer("❌ Hozirda serverda yuklama yuqori. Iltimos, 1 daqiqadan so'ng urinib ko'ring.")
             
             # Kreditni faqat foydalanuvchidan ayiramiz (Admin bepul)
             if message.from_user.id != ADMIN_ID:
