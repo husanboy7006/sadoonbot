@@ -756,16 +756,20 @@ async def handle_cgi_final(message: Message, state: FSMContext):
         response = model.generate_content([reasoning_prompt, {"mime_type": "image/jpeg", "data": image_data}])
         
         if response.text:
-            ai_prompt = response.text.replace('"', '').replace('\n', ' ').strip()
+            # Promtdan maxsus belgilarni olib tashlaymiz
+            clean_text = response.text.replace('"', '').replace("'", "").replace('\n', ' ').strip()
+            # Faqat lotin harflari va raqamlarni qoldiramiz (xavfsiz URL uchun)
+            import re
+            ai_prompt = re.sub(r'[^a-zA-Z0-9\s,.-]', '', clean_text)
             
-            # Platforma o'lchamlari
+            # Platforma o'lchamlari (Optimallashtirilgan)
             dimensions = {
-                "Instagram (4:5)": (1080, 1350),
-                "Story (9:16)": (1080, 1920),
-                "Banner (16:9)": (1920, 1080),
-                "Poster": (1000, 1500)
+                "Instagram (4:5)": (800, 1000),
+                "Story (9:16)": (720, 1280),
+                "Banner (16:9)": (1280, 720),
+                "Poster": (800, 1200)
             }
-            width, height = dimensions.get(plat, (1024, 1024))
+            width, height = dimensions.get(plat, (800, 800))
             
             # 2. Pollinations.ai orqali rasm olamiz (Tezkor Turbo modeli)
             import urllib.parse
@@ -796,7 +800,7 @@ async def handle_cgi_final(message: Message, state: FSMContext):
                         else:
                             await message.answer("❌ Rasm yaratishda xatolik (API). Iltimos, qaytadan urinib ko'ring.")
                 except Exception as download_error:
-                    await message.answer(f"⏳ Rasm yaratish juda uzoq davom etdi (2 daqiqadan ko'p). Iltimos, server biroz bo'shagach qaytadan urinib ko'ring.")
+                    await message.answer(f"❌ Yuklab olishda xatolik: {str(download_error)[:100]}")
             
             # Kreditni faqat foydalanuvchidan ayiramiz (Admin bepul)
             if message.from_user.id != ADMIN_ID:
