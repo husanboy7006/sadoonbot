@@ -777,9 +777,15 @@ async def handle_cgi_final(message: Message, state: FSMContext):
             await message.answer("❌ CGI generatsiyasida rasm yaratib bo'lmadi. Iltimos, qaytadan urinib ko'ring.", parse_mode=None)
             
     except Exception as e:
-        await message.answer(f"❌ Xatolik: {str(e)}")
+        error_text = str(e)
+        if "ResourceExhausted" in error_text or "429" in error_text:
+            await message.answer("⚠️ **AI Limiti tugadi yoki cheklov.**\n\nHugging Face serverida rasm yaratish uchun limit yetarli emas. Iltimos, bir ozdan so'ng qaytadan urinib ko'ring yoki boshqa rasm yuboring.", parse_mode=None)
+        else:
+            await message.answer(f"❌ Xatolik yuz berdi: {error_text[:200]}", parse_mode=None)
     
-    await wait_msg.delete()
+    try:
+        await wait_msg.delete()
+    except: pass
     await message.answer("Menu:", reply_markup=main_keyboard)
 
 async def main():
