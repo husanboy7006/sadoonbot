@@ -755,24 +755,23 @@ async def handle_cgi_final(message: Message, state: FSMContext):
         response = model.generate_content([reasoning_prompt, {"mime_type": "image/jpeg", "data": image_data}])
         
         if response.text:
-            # CGI Promt yaratish
-            ai_prompt = response.text.replace('"', '').replace('\n', ' ').strip()
+            # Promtdan maxsus belgilarni olib tashlaymiz va qisqartiramiz (Max 250 chars)
+            clean_text = response.text.replace('"', '').replace("'", "").replace('\n', ' ').strip()
+            import re
+            ai_prompt = re.sub(r'[^a-zA-Z0-9\s,.-]', '', clean_text)[:250]
             
-            # API URL for High Quality FLUX
-            API_URL_HF = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
-            headers = {"Authorization": f"Bearer {HF_TOKEN}"} if HF_TOKEN else {}
-            
-            payload = {
-                "inputs": ai_prompt,
-                "parameters": {"width": 1024, "height": 1024} # Sifat uchun baland o'lcham
-            }
+            # API URL for High Quality FLUX (Direct Mirror)
+            import urllib.parse
+            safe_p = urllib.parse.quote(ai_prompt)
+            # Biz barqarorroq bo'lgan image.pollinations.ai dan foydalanamiz
+            image_url = f"https://image.pollinations.ai/prompt/{safe_p}?width=1024&height=1024&nologo=true&model=flux"
             
             temp_cgi_path = f"temp/{message.from_user.id}_cgi.jpg"
             
             async with aiohttp.ClientSession() as session:
                 try:
-                    # Hugging Face-dan rasmni yuklab olamiz
-                    async with session.post(API_URL_HF, headers=headers, json=payload, timeout=60) as resp:
+                    # Rasm yaratilishini kutamiz (Flux og'ir model)
+                    async with session.get(image_url, timeout=90) as resp:
                         if resp.status == 200:
                             content = await resp.read()
                             with open(temp_cgi_path, "wb") as f:
@@ -781,23 +780,23 @@ async def handle_cgi_final(message: Message, state: FSMContext):
                             from aiogram.types import FSInputFile
                             await message.answer_photo(
                                 photo=FSInputFile(temp_cgi_path), 
-                                caption=f"💎 **Premium CGI Artist Natijasi**\n🚀 Model: FLUX.1 (High Quality)\n\n_Dizayn: Sadoon AI_"
+                                caption=f"💎 **High-End CGI Art**\n🚀 Model: Flux (Professional)\n\n_System: Sadoon AI_"
                             )
                             if os.path.exists(temp_cgi_path): os.remove(temp_cgi_path)
                         else:
-                            # Agar HF xato bersa, Pollinations-ga fallback qilamiz
-                            await message.answer("⏳ Premium server band, zaxira serveridan foydalanilmoqda...")
-                            import urllib.parse
-                            safe_p = urllib.parse.quote(ai_prompt[:200])
-                            fallback_url = f"https://pollinations.ai/p/{safe_p}?width=800&height=800&model=flux&nologo=true"
-                            async with session.get(fallback_url) as f_resp:
-                                if f_resp.status == 200:
-                                    f_content = await f_resp.read()
-                                    with open(temp_cgi_path, "wb") as f: f.write(f_content)
-                                    await message.answer_photo(photo=FSInputFile(temp_cgi_path), caption="🚀 CGI Natijasi (Flux)")
-                                    if os.path.exists(temp_cgi_path): os.remove(temp_cgi_path)
+                            await message.answer("⚠️ Hozirda server band. Iltimos, 1 daqiqadan so'ng urinib ko'ring.")
                 except Exception as e:
-                    await message.answer(f"❌ Xatolik: {str(e)[:100]}")
+                    # Oxirgi chora: Turbo rejim
+                    fallback_turbo = f"https://pollinations.ai/p/{safe_p}?width=800&height=800&model=turbo&nologo=true"
+                    try:
+                        async with session.get(fallback_turbo, timeout=30) as f_resp:
+                            if f_resp.status == 200:
+                                f_content = await f_resp.read()
+                                with open(temp_cgi_path, "wb") as f: f.write(f_content)
+                                await message.answer_photo(photo=FSInputFile(temp_cgi_path), caption="🚀 CGI Natijasi (Turbo)")
+                                if os.path.exists(temp_cgi_path): os.remove(temp_cgi_path)
+                    except:
+                        await message.answer(f"❌ Xatolik yuz berdi. Iltimos, boshqa rasm bilan urinib ko'ring.")
             
             # Kreditni faqat foydalanuvchidan ayiramiz (Admin bepul)
             if message.from_user.id != ADMIN_ID:
