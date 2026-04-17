@@ -143,8 +143,8 @@ main_keyboard = InlineKeyboardMarkup(inline_keyboard=[
     ]
 ])
 
-CARD_DATA = "💳 8600 0000 0000 0000\n👤 Ism Familiya"
-PRICE_PER_CGI = "5 000 UZS"
+CARD_DATA = "💳 5614 6820 2858 4441"
+PRICE_PER_CGI = "2 000 UZS"
 
 ADMIN_ID = 7110271171 
 
