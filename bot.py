@@ -629,10 +629,12 @@ async def reject_payment_callback(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "cgi_choice")
 async def cgi_choice_handler(callback: CallbackQuery, state: FSMContext):
-    balance = db.get_user_balance(callback.from_user.id)
-    if balance < 1:
-        await callback.answer("Balansingiz yetarli emas!", show_alert=True)
-        return await fill_balance_handler(callback, state)
+    # Admin uchun balans cheksiz
+    if callback.from_user.id != ADMIN_ID:
+        balance = db.get_user_balance(callback.from_user.id)
+        if balance < 1:
+            await callback.answer("Balansingiz yetarli emas!", show_alert=True)
+            return await fill_balance_handler(callback, state)
         
     await callback.answer()
     await callback.message.answer("🚀 **Premium CGI Product Artist** rejimiga xush kelibsiz!\n\n📸 Birinchi navbatda mahsulot rasmini yuboring:")
@@ -688,15 +690,15 @@ async def handle_cgi_final(message: Message, state: FSMContext):
         response = model.generate_content(content)
         
         if response.text:
-            # CGI Artist logic typically returns images, but we handle text if AI responds with description
-            # FOR DEMO: using same photo or description. Real implementation needs Imagen/DALL-E API.
             try:
                 await message.answer(response.text)
             except:
                 await message.answer(response.text[:1000])
                 
-            # Kreditni ayirish
-            db.update_balance(message.from_user.id, -1)
+            # Kreditni faqat foydalanuvchidan ayiramiz (Admin bepul)
+            if message.from_user.id != ADMIN_ID:
+                db.update_balance(message.from_user.id, -1)
+                
             db.log_stats(message.from_user.id, "cgi")
         else:
             await message.answer("❌ CGI generatsiyasida xatolik yuz berdi.")

@@ -58,7 +58,8 @@ def add_user(user_id, username):
         supabase.table("users").upsert({
             "user_id": user_id,
             "username": username,
-            "join_date": now
+            "join_date": now,
+            "balance": 1  # Yangi foydalanuvchiga 1 ta bepul sovg'a
         }, on_conflict="user_id").execute()
     except: pass
 
