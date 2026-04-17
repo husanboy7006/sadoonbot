@@ -767,12 +767,13 @@ async def handle_cgi_final(message: Message, state: FSMContext):
             }
             width, height = dimensions.get(plat, (1024, 1024))
             
-            # 2. Pollinations.ai orqali rasm olamiz (Flux modeli)
+            # 2. Pollinations.ai orqali rasm olamiz (Tezkor Turbo modeli)
             import urllib.parse
             import random
             seed = random.randint(1, 999999)
             safe_prompt = urllib.parse.quote(ai_prompt)
-            image_url = f"https://pollinations.ai/p/{safe_prompt}?width={width}&height={height}&seed={seed}&model=flux&nologo=true"
+            # Turbo modeli Flux-dan tezroq va barqarorroq
+            image_url = f"https://pollinations.ai/p/{safe_prompt}?width={width}&height={height}&seed={seed}&model=turbo&nologo=true"
             
             # Rasmni avval serverga yuklab olamiz (tayyor bo'lguncha kutish uchun)
             temp_cgi_path = f"temp/{message.from_user.id}_cgi.jpg"
