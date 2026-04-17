@@ -58,11 +58,10 @@ if sys.stdout.encoding != 'utf-8':
     except AttributeError:
         pass
 
-# --- [SETTINGS] ---
-TOKEN = "8727075082:AAEQrVaA_S-D6wHy1URANE2NgLVMs5d7yXw"  # Asosiy bot
-# TOKEN = "8307406554:AAHgJXXn8PcQYvdJm65aDXXkw0SUSzSQNu8"  # Test boti
-API_URL = os.getenv("API_URL", "http://127.0.0.1:7860/api/mix")
+# SETTINGS
+TOKEN = "8727075082:AAEQrVaA_S-D6wHy1URANE2NgLVMs5d7yXw"
 GEMINI_KEY = os.getenv("GEMINI_KEY", "AIzaSyDl4kbccq-GUe9BP8Kwc-YTBDcXhszp5rw")
+HF_TOKEN = os.getenv("HF_TOKEN", "") # Hugging Face Token for High Quality API
 
 # Gemini sozlamalari
 genai.configure(api_key=GEMINI_KEY)
@@ -756,35 +755,24 @@ async def handle_cgi_final(message: Message, state: FSMContext):
         response = model.generate_content([reasoning_prompt, {"mime_type": "image/jpeg", "data": image_data}])
         
         if response.text:
-            # Promtdan maxsus belgilarni olib tashlaymiz va qisqartiramiz (Max 200 chars)
-            clean_text = response.text.replace('"', '').replace("'", "").replace('\n', ' ').strip()
-            # Faqat logik qismini olamiz
-            short_prompt = clean_text[:200]
-            import re
-            ai_prompt = re.sub(r'[^a-zA-Z0-9\s,.-]', '', short_prompt)
+            # CGI Promt yaratish
+            ai_prompt = response.text.replace('"', '').replace('\n', ' ').strip()
             
-            # Platforma o'lchamlari (Optimallashtirilgan)
-            dimensions = {
-                "Instagram (4:5)": (512, 640),
-                "Story (9:16)": (512, 910),
-                "Banner (16:9)": (910, 512),
-                "Poster": (512, 768)
+            # API URL for High Quality FLUX
+            API_URL_HF = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
+            headers = {"Authorization": f"Bearer {HF_TOKEN}"} if HF_TOKEN else {}
+            
+            payload = {
+                "inputs": ai_prompt,
+                "parameters": {"width": 1024, "height": 1024} # Sifat uchun baland o'lcham
             }
-            width, height = dimensions.get(plat, (512, 512))
-            
-            # 2. Pollinations.ai (Tezkor va barqaror)
-            import urllib.parse
-            import random
-            seed = random.randint(1, 999999)
-            safe_prompt = urllib.parse.quote(ai_prompt)
-            image_url = f"https://pollinations.ai/p/{safe_prompt}?width={width}&height={height}&seed={seed}&model=turbo&nologo=true"
             
             temp_cgi_path = f"temp/{message.from_user.id}_cgi.jpg"
             
             async with aiohttp.ClientSession() as session:
                 try:
-                    # Timeoutni kichraytiramiz, lekin retry (qayta urinish) qo'shamiz
-                    async with session.get(image_url, timeout=30) as resp:
+                    # Hugging Face-dan rasmni yuklab olamiz
+                    async with session.post(API_URL_HF, headers=headers, json=payload, timeout=60) as resp:
                         if resp.status == 200:
                             content = await resp.read()
                             with open(temp_cgi_path, "wb") as f:
@@ -793,26 +781,23 @@ async def handle_cgi_final(message: Message, state: FSMContext):
                             from aiogram.types import FSInputFile
                             await message.answer_photo(
                                 photo=FSInputFile(temp_cgi_path), 
-                                caption=f"🚀 **CGI Artist Natijasi**\n🎨 Vibe: {vibe}\n📐 Platforma: {plat}\n\n_System: Sadoon AI_"
+                                caption=f"💎 **Premium CGI Artist Natijasi**\n🚀 Model: FLUX.1 (High Quality)\n\n_Dizayn: Sadoon AI_"
                             )
                             if os.path.exists(temp_cgi_path): os.remove(temp_cgi_path)
                         else:
-                            await message.answer(f"⚠️ Rasm yaratish band. Iltimos, bir necha soniyadan so'ng qayta yuboring.")
-                except Exception as de:
-                    # Fallback URL - ba'zan asosiy URL band bo'ladi
-                    await message.answer(f"⏳ Biroz kutib turing, rasm tayyorlanmoqda...")
-                    # Qayta urinish (Retry with simplified URL)
-                    simple_url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width={width}&height={height}&seed={seed}&nologo=true"
-                    try:
-                        async with session.get(simple_url, timeout=30) as resp2:
-                             if resp2.status == 200:
-                                 content = await resp2.read()
-                                 with open(temp_cgi_path, "wb") as f: f.write(content)
-                                 from aiogram.types import FSInputFile
-                                 await message.answer_photo(photo=FSInputFile(temp_cgi_path), caption=f"🚀 CGI Natijasi\n🎨 Vibe: {vibe}")
-                                 if os.path.exists(temp_cgi_path): os.remove(temp_cgi_path)
-                    except:
-                        await message.answer("❌ Hozirda serverda yuklama yuqori. Iltimos, 1 daqiqadan so'ng urinib ko'ring.")
+                            # Agar HF xato bersa, Pollinations-ga fallback qilamiz
+                            await message.answer("⏳ Premium server band, zaxira serveridan foydalanilmoqda...")
+                            import urllib.parse
+                            safe_p = urllib.parse.quote(ai_prompt[:200])
+                            fallback_url = f"https://pollinations.ai/p/{safe_p}?width=800&height=800&model=flux&nologo=true"
+                            async with session.get(fallback_url) as f_resp:
+                                if f_resp.status == 200:
+                                    f_content = await f_resp.read()
+                                    with open(temp_cgi_path, "wb") as f: f.write(f_content)
+                                    await message.answer_photo(photo=FSInputFile(temp_cgi_path), caption="🚀 CGI Natijasi (Flux)")
+                                    if os.path.exists(temp_cgi_path): os.remove(temp_cgi_path)
+                except Exception as e:
+                    await message.answer(f"❌ Xatolik: {str(e)[:100]}")
             
             # Kreditni faqat foydalanuvchidan ayiramiz (Admin bepul)
             if message.from_user.id != ADMIN_ID:
