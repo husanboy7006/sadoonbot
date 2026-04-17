@@ -67,6 +67,7 @@ GEMINI_KEY = os.getenv("GEMINI_KEY", "AIzaSyDl4kbccq-GUe9BP8Kwc-YTBDcXhszp5rw")
 # Gemini sozlamalari
 genai.configure(api_key=GEMINI_KEY)
 model = genai.GenerativeModel('gemini-flash-lite-latest')
+model_cgi = genai.GenerativeModel('gemini-3.1-flash-image-preview') # Nano Banana 2
 
 # Tilmoch AI promtingiz
 CGI_PROMPT = """
@@ -748,21 +749,32 @@ async def handle_cgi_final(message: Message, state: FSMContext):
             {"mime_type": "image/jpeg", "data": image_data}
         ]
         
-        response = model.generate_content(content)
+        # Nano Banana 2 (model_cgi) orqali rasm yaratamiz
+        response = model_cgi.generate_content(content)
         
-        if response.text:
-            try:
-                await message.answer(response.text, parse_mode=None)
-            except:
-                await message.answer(response.text[:1000], parse_mode=None)
-                
+        image_sent = False
+        
+        # Javob ichidan rasmni qidiramiz
+        if response.candidates and response.candidates[0].content.parts:
+            for part in response.candidates[0].content.parts:
+                # Rasm inline_data sifatida kelsa
+                if hasattr(part, 'inline_data') and part.inline_data:
+                    from aiogram.types import BufferedInputFile
+                    image_file = BufferedInputFile(part.inline_data.data, filename="cgi_result.jpg")
+                    await message.answer_photo(photo=image_file, caption=f"🚀 **CGI Artist Natijasi**\nVibe: {vibe}\nPlatforma: {plat}")
+                    image_sent = True
+                    break
+                # Agar AI matn qaytarsa
+                elif hasattr(part, 'text') and part.text:
+                    await message.answer(part.text, parse_mode=None)
+
+        if image_sent:
             # Kreditni faqat foydalanuvchidan ayiramiz (Admin bepul)
             if message.from_user.id != ADMIN_ID:
                 db.update_balance(message.from_user.id, -1)
-                
             db.log_stats(message.from_user.id, "cgi")
-        else:
-            await message.answer("❌ CGI generatsiyasida xatolik yuz berdi.", parse_mode=None)
+        elif not any(hasattr(part, 'text') and part.text for part in response.candidates[0].content.parts):
+            await message.answer("❌ CGI generatsiyasida rasm yaratib bo'lmadi. Iltimos, qaytadan urinib ko'ring.", parse_mode=None)
             
     except Exception as e:
         await message.answer(f"❌ Xatolik: {str(e)}")
