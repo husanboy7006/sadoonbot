@@ -776,21 +776,26 @@ async def handle_cgi_final(message: Message, state: FSMContext):
             
             # Rasmni avval serverga yuklab olamiz (tayyor bo'lguncha kutish uchun)
             temp_cgi_path = f"temp/{message.from_user.id}_cgi.jpg"
-            async with aiohttp.ClientSession() as session:
-                async with session.get(image_url) as resp:
-                    if resp.status == 200:
-                        with open(temp_cgi_path, "wb") as f:
-                            f.write(await resp.read())
-                        
-                        # Tayyor rasmni yuborish
-                        from aiogram.types import FSInputFile
-                        await message.answer_photo(
-                            photo=FSInputFile(temp_cgi_path), 
-                            caption=f"🚀 **CGI Artist Natijasi** (Flux)\n🎨 Vibe: {vibe}\n📐 Platforma: {plat}\n\n_Dizayn: Gemini AI_"
-                        )
-                        if os.path.exists(temp_cgi_path): os.remove(temp_cgi_path)
-                    else:
-                        await message.answer("❌ Rasm yaratishda xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.")
+            timeout = aiohttp.ClientTimeout(total=60) # 60 soniya kutamiz
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                try:
+                    async with session.get(image_url) as resp:
+                        if resp.status == 200:
+                            content = await resp.read()
+                            with open(temp_cgi_path, "wb") as f:
+                                f.write(content)
+                            
+                            # Tayyor rasmni yuborish
+                            from aiogram.types import FSInputFile
+                            await message.answer_photo(
+                                photo=FSInputFile(temp_cgi_path), 
+                                caption=f"🚀 **CGI Artist Natijasi** (Flux)\n🎨 Vibe: {vibe}\n📐 Platforma: {plat}\n\n_Dizayn: Gemini AI_"
+                            )
+                            if os.path.exists(temp_cgi_path): os.remove(temp_cgi_path)
+                        else:
+                            await message.answer("❌ Rasm yaratishda xatolik (API). Iltimos, qaytadan urinib ko'ring.")
+                except Exception as download_error:
+                    await message.answer(f"⏳ Rasm yaratish biroz cho'zildi. Iltimos, yana bir bor urinib ko'ring.")
             
             # Kreditni faqat foydalanuvchidan ayiramiz (Admin bepul)
             if message.from_user.id != ADMIN_ID:
