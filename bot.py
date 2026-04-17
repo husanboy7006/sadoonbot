@@ -772,13 +772,25 @@ async def handle_cgi_final(message: Message, state: FSMContext):
             import random
             seed = random.randint(1, 999999)
             safe_prompt = urllib.parse.quote(ai_prompt)
-            image_url = f"https://pollinations.ai/p/{safe_prompt}?width={width}&height={height}&seed={seed}&model=flux"
+            image_url = f"https://pollinations.ai/p/{safe_prompt}?width={width}&height={height}&seed={seed}&model=flux&nologo=true"
             
-            # Rasmni yuborish
-            await message.answer_photo(
-                photo=image_url, 
-                caption=f"🚀 **CGI Artist Natijasi** (Flux)\n🎨 Vibe: {vibe}\n📐 Platforma: {plat}\n\n_Dizayn: Gemini AI_"
-            )
+            # Rasmni avval serverga yuklab olamiz (tayyor bo'lguncha kutish uchun)
+            temp_cgi_path = f"temp/{message.from_user.id}_cgi.jpg"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(image_url) as resp:
+                    if resp.status == 200:
+                        with open(temp_cgi_path, "wb") as f:
+                            f.write(await resp.read())
+                        
+                        # Tayyor rasmni yuborish
+                        from aiogram.types import FSInputFile
+                        await message.answer_photo(
+                            photo=FSInputFile(temp_cgi_path), 
+                            caption=f"🚀 **CGI Artist Natijasi** (Flux)\n🎨 Vibe: {vibe}\n📐 Platforma: {plat}\n\n_Dizayn: Gemini AI_"
+                        )
+                        if os.path.exists(temp_cgi_path): os.remove(temp_cgi_path)
+                    else:
+                        await message.answer("❌ Rasm yaratishda xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.")
             
             # Kreditni faqat foydalanuvchidan ayiramiz (Admin bepul)
             if message.from_user.id != ADMIN_ID:
