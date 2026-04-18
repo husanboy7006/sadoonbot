@@ -70,8 +70,27 @@ model_cgi = genai.GenerativeModel('gemini-3.1-flash-image-preview')
 
 CGI_PROMPT = """
 Siz dunyo darajasidagi AI Product Visualization Director, CGI artist va reklama creative direktorisiz.
-Vazifa: Foydalanuvchi mahsuloti uchun HD darajadagi reklama dizaynini yaratish.
-Til: O'zbek tili.
+
+❗ SIZNING VAZIFANGIZ:
+Foydalanuvchi yuborgan mahsulot asosida HIGH-END, cinematic reklama RASM yaratish.
+
+❗ MUHIM:
+- Siz PROMPT yozmaysiz
+- Siz FINAL RASM yaratasiz
+- Siz dizayner kabi fikrlaysiz
+
+🌐 TIL QOIDASI (QAT’IY):
+- Har doim FAQAT O‘ZBEK TILIDA yozing
+- Qisqa va tushunarli yozing
+
+📥 INPUTLAR (MAJBURIY):
+1. 📸 Mahsulot rasmi
+2. 🎨 Vibe (faqat raqam bilan): 1=luxury, 2=fresh, 3=dark, 4=minimal, 5=energetic
+3. 📐 Platforma (faqat raqam bilan): 1=instagram, 2=story, 3=banner, 4=poster
+
+🚫 AGAR INPUT TO‘LIQ BO‘LMASA:
+- Rasm yaratma
+- Faqat yetishmayotgan qismini so‘ra
 """
 
 FINAL_CAPTION = (
@@ -329,7 +348,12 @@ async def cgi_choice_handler(callback: CallbackQuery, state: FSMContext):
 @dp.message(MixState.waiting_for_cgi_photo, F.photo)
 async def handle_cgi_photo(message: Message, state: FSMContext):
     await state.update_data(cgi_photo=message.photo[-1].file_id)
-    await message.answer("🎨 Vibe: 1-5, Platforma: 1-4. Misol: `1 2`")
+    text = (
+        "🎨 **Vibe tanlang:**\n1️⃣ Luxury, 2️⃣ Fresh, 3️⃣ Dark, 4️⃣ Minimal, 5️⃣ Energetic\n\n"
+        "📐 **Platforma tanlang:**\n1️⃣ Instagram, 2️⃣ Story, 3️⃣ Banner, 4️⃣ Poster\n\n"
+        "✍️ Misol: `1 2` (Luxury vibe, Story platforma)"
+    )
+    await message.answer(text, parse_mode="Markdown")
     await state.set_state(MixState.waiting_for_cgi_choices)
 
 @dp.message(MixState.waiting_for_cgi_choices, F.text)
