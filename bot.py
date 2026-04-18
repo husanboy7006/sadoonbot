@@ -803,8 +803,11 @@ async def handle_cgi_final(message: Message, state: FSMContext):
                          else:
                              await message.answer("❌ Serverda vaqtinchalik xatolik. Birozdan so'ng urinib ko'ring.")
         except Exception as e:
-            print(f"Global CGI Error: {e}")
-            await message.answer(f"❌ Xatolik yuz berdi: {str(e)[:100]}")
+            print(f"CGI Internal Error (Flux/Nano): {e}")
+            await message.answer(f"❌ Xatolik yuz berdi: {str(e)[:50]}")
+    except Exception as global_e:
+        print(f"Global CGI Module Error: {global_e}")
+        await message.answer("⚠️ CGI moduli vaqtinchalik ishlamayapti. Iltimos, keyinroq urinib ko'ring.")
     
     try:
         await wait_msg.delete()
