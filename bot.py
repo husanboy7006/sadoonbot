@@ -759,7 +759,11 @@ async def handle_cgi_final(message: Message, state: FSMContext):
             # Nano Banana-dan bevosita rasm yaratishni so'raymiz
             nano_prompt = f"{CGI_PROMPT}\n\nVAZIFA: Ushbu mahsulotni o'zini va detallarini mutlaqo o'zgartirmasdan, quyidagi vibe va platformada professional reklama rasmini yaratib ber.\nVibe: {vibe}\nPlatforma: {plat}"
             
-            response = model_cgi.generate_content([nano_prompt, {"mime_type": "image/jpeg", "data": image_data}])
+            # Async so'rov va timeout qo'shamiz (60 soniya)
+            response = await asyncio.wait_for(
+                model_cgi.generate_content_async([nano_prompt, {"mime_type": "image/jpeg", "data": image_data}]),
+                timeout=60
+            )
             
             image_sent = False
             if response.candidates and response.candidates[0].content.parts:
