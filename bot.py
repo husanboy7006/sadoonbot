@@ -191,7 +191,6 @@ async def handle_photo(message: Message, state: FSMContext):
 
 @dp.message(MixState.waiting_for_link, F.text)
 async def handle_mix_link(message: Message, state: FSMContext):
-    from bot import extract_url
     url = extract_url(message.text)
     if not url: return await message.answer("❌ Havola xato.")
     data = await state.get_data()
@@ -224,7 +223,6 @@ async def down_choice_btn(callback: CallbackQuery, state: FSMContext):
 
 @dp.message(MixState.waiting_for_downloader, F.text)
 async def handle_download_direct(message: Message, state: FSMContext):
-    from bot import extract_url
     url = extract_url(message.text)
     if not url: return await message.answer("❌ Havola topilmadi.")
     await state.clear()
