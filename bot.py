@@ -126,8 +126,8 @@ class MixState(StatesGroup):
 # Asosiy tugmalar (Menu)
 
 main_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="🎬 Klip yasash (🖼 rasm + 🎵 musiqa)", callback_data="mix_choice")],
-    [InlineKeyboardButton(text="🚀 CGI Product Artist (Premium)", callback_data="cgi_choice")],
+    [InlineKeyboardButton(text="🎬 Klip Yaratish (V3) (🖼 rasm + 🎵 musiqa)", callback_data="mix_choice")],
+    [InlineKeyboardButton(text="🚀 CGI Product Artist (Premium v2)", callback_data="cgi_choice")],
     [
         InlineKeyboardButton(text="📥 Yuklab olish", callback_data="down_choice"),
         InlineKeyboardButton(text="🔍 Shazam", callback_data="shazam_choice")
@@ -156,12 +156,12 @@ async def command_start_handler(message: Message, state: FSMContext) -> None:
     db.add_user(message.from_user.id, message.from_user.username)
 
     start_text = (
-        "👋 **Salom! Men Sadoon AI botiman.**\n\n"
-        "Men sizga quyidagi ishlarda yordam bera olaman:\n"
-        "🎬 **Klip yasash** — Rasm va musiqani birlashtirib klip yaratish.\n"
-        "📥 **Yuklab olish** — Instagram va TikTok-dan media yuklash.\n"
-        "🔍 **Shazam** — Musiqalarni nomini aniqlash va topish.\n"
-        "🌐 **Tilmoch AI** — Professional audio va matn tarjimoni.\n\n"
+        "👑 **Sadoon AI Premium Bot-ga xush kelibsiz!**\n\n"
+        "Men sizga eng yuqori sifatli (CGI, KLIP, TARJIMA) xizmatlarni taqdim etaman.\n\n"
+        "🎬 **Klip yaratish** — Rasm va musiqani birlashtirish.\n"
+        "📥 **Yuklab olish** — Instagram va TikTok mediya yuklagich.\n"
+        "🔍 **Shazam** — Musiqalarni aniqlash.\n"
+        "🌐 **Tilmoch AI** — Aqlli tarjimon.\n\n"
         "**Nima qilmoqchimiz? Pastdan tanlang:** 👇\n"
         "🤖 @sadoon\_ai\_bot"
     )
