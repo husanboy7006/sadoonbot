@@ -362,18 +362,36 @@ async def handle_cgi_final(message: Message, state: FSMContext):
                         return await finish_cgi(message, wait_msg)
         except Exception as ne: print(f"Nano failed: {ne}")
 
-        # Emergency Fallback to Flux
-        await message.answer("⏳ Tezkor serverga ulanilmoqda...")
-        prompt = f"Professional advertising of product, {vibe} style, {plat} format, high resolution"
-        import urllib.parse
-        url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(prompt)}?width=800&height=800&nologo=true"
-        async with aiohttp.ClientSession() as s:
-            async with s.get(url) as r:
-                if r.status == 200:
-                    from aiogram.types import BufferedInputFile
-                    await message.answer_photo(photo=BufferedInputFile(await r.read(), filename="cgi_f.jpg"), caption="🚀 Fast Result")
-                    return await finish_cgi(message, wait_msg)
-                else: await message.answer("❌ Server xatosi.")
+        # Emergency Fallback to Flux (with Image Recognition)
+        await message.answer("⏳ Premium server kutmoqda, tezkor tizim bilan mahsulotni tahlil qilyapman...")
+        try:
+            # Gemini-dan rasmdagi mahsulotni aniqlashni so'raymiz
+            vision_prompt = "Ushbu rasmdagi mahsulot nima? Faqat nomini ayting (Ingliz tilida). Masalan: 'Sprite can', 'Perfume bottle', 'Sneakers'."
+            vision_res = model.generate_content([vision_prompt, {"mime_type":"image/jpeg","data":img_data}])
+            product_name = vision_res.text.strip() if vision_res.text else "Product"
+            
+            prompt = f"High-end advertising photography of {product_name}, {vibe} style, {plat} format, stunning details, 8k, cinematic"
+            import urllib.parse
+            url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(prompt)}?width=800&height=800&nologo=true"
+            
+            async with aiohttp.ClientSession() as s:
+                async with s.get(url) as r:
+                    if r.status == 200:
+                        from aiogram.types import BufferedInputFile
+                        await message.answer_photo(photo=BufferedInputFile(await r.read(), filename="cgi_f.jpg"), caption=f"🚀 CGI Result ({product_name})")
+                        return await finish_cgi(message, wait_msg)
+        except Exception as vision_err:
+            print(f"Vision call failed: {vision_err}")
+            # Agar Gemini butunlay bloklangan bo'lsa, o'sha eski generic rasm
+            prompt = f"Professional advertising of product, {vibe} style, {plat} format"
+            import urllib.parse
+            url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(prompt)}?width=800&height=800&nologo=true"
+            async with aiohttp.ClientSession() as s:
+                async with s.get(url) as r:
+                    if r.status == 200:
+                        from aiogram.types import BufferedInputFile
+                        await message.answer_photo(photo=BufferedInputFile(await r.read(), filename="cgi_f.jpg"), caption="🚀 Fast Result")
+                        return await finish_cgi(message, wait_msg)
     except Exception as e: await message.answer(f"❌ Xatolik: {e}")
     await wait_msg.delete()
     await message.answer("Menyu:", reply_markup=main_keyboard)
