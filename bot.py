@@ -802,20 +802,14 @@ async def handle_cgi_final(message: Message, state: FSMContext):
                              db.log_stats(message.from_user.id, "cgi")
                          else:
                              await message.answer("❌ Serverda vaqtinchalik xatolik. Birozdan so'ng urinib ko'ring.")
-        except Exception as fe:
-            await message.answer(f"❌ Xatolik yuz berdi: {str(fe)[:50]}")
-            
-            # Kreditni faqat foydalanuvchidan ayiramiz (Admin bepul)
-            if message.from_user.id != ADMIN_ID:
-                db.update_balance(message.from_user.id, -1)
-            db.log_stats(message.from_user.id, "cgi")
         except Exception as e:
-            await message.answer(f"❌ Xatolik yuz berdi: {str(e)[:150]}")
+            print(f"Global CGI Error: {e}")
+            await message.answer(f"❌ Xatolik yuz berdi: {str(e)[:100]}")
     
     try:
         await wait_msg.delete()
     except: pass
-    await message.answer("Menu:", reply_markup=main_keyboard)
+    await message.answer("Menyu:", reply_markup=main_keyboard)
 
 async def main():
     db.init_db()
