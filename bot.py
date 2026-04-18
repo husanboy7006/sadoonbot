@@ -756,68 +756,54 @@ async def handle_cgi_final(message: Message, state: FSMContext):
         
         # --- 1-URINISH: NANO BANANA 2 (Eng yuqori sifat) ---
         try:
-            # Nano Banana-dan bevosita rasm yaratishni so'raymiz
-            nano_prompt = f"{CGI_PROMPT}\n\nVAZIFA: Ushbu mahsulotni o'zini va detallarini mutlaqo o'zgartirmasdan, quyidagi vibe va platformada professional reklama rasmini yaratib ber.\nVibe: {vibe}\nPlatforma: {plat}"
+            nano_prompt = f"{CGI_PROMPT}\n\nVAZIFA: Ushbu mahsulotni o'zini va detallarini mutlaqo o'zgartirmasdan, professional reklama rasmini yaratib ber.\nVibe: {vibe}\nPlatforma: {plat}"
             
-            # Async so'rov va timeout qo'shamiz (60 soniya)
             response = await asyncio.wait_for(
                 model_cgi.generate_content_async([nano_prompt, {"mime_type": "image/jpeg", "data": image_data}]),
-                timeout=60
+                timeout=100
             )
             
-            image_sent = False
             if response.candidates and response.candidates[0].content.parts:
                 for part in response.candidates[0].content.parts:
                     if hasattr(part, 'inline_data') and part.inline_data:
                         from aiogram.types import BufferedInputFile
                         image_file = BufferedInputFile(part.inline_data.data, filename="cgi_result.jpg")
-                        await message.answer_photo(
-                            photo=image_file, 
-                            caption=f"🍌 **Nano Banana Natijasi**\n💎 Sifat: Studio Quality\n\n_System: Sadoon AI_"
-                        )
-                        image_sent = True
-                        break
-            
-            if image_sent:
-                if message.from_user.id != ADMIN_ID: db.update_balance(message.from_user.id, -1)
-                db.log_stats(message.from_user.id, "cgi")
-                try: await wait_msg.delete()
-                except: pass
-                await message.answer("Menu:", reply_markup=main_keyboard)
-                return # Muvaffaqiyatli tugadi
-
-        except Exception as nano_error:
-            # Agar Nano Banana limit bersa, logda ko'ramiz va fallbackga o'tamiz
-            print(f"[!] Nano Banana Limit: {nano_error}")
-            pass
-
-        # --- 2-URINISH: FLUX (Zaxira - har doim ishlaydi) ---
-        await message.answer("⏳ Premium server band, zaxira tizimi ishga tushirildi...")
-        
-        reasoning_prompt = f"{CGI_PROMPT}\n\nFOYDALANUVCHI TANLOVI:\nVibe: {vibe}\nPlatforma: {plat}\n\nVAZIFA: Ingliz tilida batafsil rasm promtini yozing."
-        response = model.generate_content([reasoning_prompt, {"mime_type": "image/jpeg", "data": image_data}])
-        
-        if response.text:
-            clean_text = response.text.replace('"', '').replace("'", "").replace('\n', ' ').strip()
-            import re
-            ai_prompt = re.sub(r'[^a-zA-Z0-9\s,.-]', '', clean_text)[:250]
-            import urllib.parse
-            safe_p = urllib.parse.quote(ai_prompt)
-            image_url = f"https://image.pollinations.ai/prompt/{safe_p}?width=800&height=800&nologo=true&model=flux"
-            
-            temp_cgi_path = f"temp/{message.from_user.id}_cgi.jpg"
-            async with aiohttp.ClientSession() as session:
-                async with session.get(image_url, timeout=40) as resp:
-                    if resp.status == 200:
-                        content = await resp.read()
-                        with open(temp_cgi_path, "wb") as f: f.write(content)
-                        from aiogram.types import FSInputFile
-                        await message.answer_photo(photo=FSInputFile(temp_cgi_path), caption=f"🚀 **CGI Artist Natijasi** (Flux)")
-                        if os.path.exists(temp_cgi_path): os.remove(temp_cgi_path)
+                        await message.answer_photo(photo=image_file, caption=f"💎 **Nano Banana Art** (Studio Quality)")
                         if message.from_user.id != ADMIN_ID: db.update_balance(message.from_user.id, -1)
                         db.log_stats(message.from_user.id, "cgi")
-                    else:
-                        await message.answer("❌ Hozirda serverda yuklama yuqori.")
+                        try: await wait_msg.delete()
+                        except: pass
+                        await message.answer("Menyu:", reply_markup=main_keyboard)
+                        return
+        except Exception as ne:
+            print(f"Nano Error: {ne}")
+
+        # --- 2-URINISH: FLUX (Zaxira) ---
+        try:
+            await message.answer("⏳ Premium server band, zaxira tizimi ishlamoqda...")
+            reasoning = f"{CGI_PROMPT}\n\nVAZIFA: Inglizcha rasm promtini yozing. Vibe: {vibe}"
+            resp = model.generate_content([reasoning, {"mime_type": "image/jpeg", "data": image_data}])
+            
+            if resp.text:
+                import urllib.parse
+                clean_p = resp.text.replace('"', '').replace('\n', ' ').strip()[:200]
+                safe_p = urllib.parse.quote(clean_p)
+                image_url = f"https://image.pollinations.ai/prompt/{safe_p}?width=800&height=800&nologo=true&model=flux"
+                
+                temp_path = f"temp/{message.from_user.id}_f.jpg"
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(image_url, timeout=60) as r:
+                         if r.status == 200:
+                             with open(temp_path, "wb") as f: f.write(await r.read())
+                             from aiogram.types import FSInputFile
+                             await message.answer_photo(photo=FSInputFile(temp_path), caption="🚀 CGI Result (Backup)")
+                             if os.path.exists(temp_path): os.remove(temp_path)
+                             if message.from_user.id != ADMIN_ID: db.update_balance(message.from_user.id, -1)
+                             db.log_stats(message.from_user.id, "cgi")
+                         else:
+                             await message.answer("❌ Serverda vaqtinchalik xatolik. Birozdan so'ng urinib ko'ring.")
+        except Exception as fe:
+            await message.answer(f"❌ Xatolik yuz berdi: {str(fe)[:50]}")
             
             # Kreditni faqat foydalanuvchidan ayiramiz (Admin bepul)
             if message.from_user.id != ADMIN_ID:
