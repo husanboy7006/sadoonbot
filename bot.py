@@ -809,8 +809,28 @@ async def handle_cgi_final(message: Message, state: FSMContext):
             if message.from_user.id != ADMIN_ID:
                 db.update_balance(message.from_user.id, -1)
             db.log_stats(message.from_user.id, "cgi")
-        else:
-            await message.answer("❌ Gemini dizayn yarata olmadi. Iltimos, qaytadan urinib ko'ring.", parse_mode=None)
+                    if resp.text:
+                        import urllib.parse
+                        clean_p = resp.text.replace('"', '').replace('\n', ' ').strip()[:200]
+                        safe_p = urllib.parse.quote(clean_p)
+                        image_url = f"https://image.pollinations.ai/prompt/{safe_p}?width=800&height=800&nologo=true&model=flux"
+                        
+                        temp_path = f"temp/{message.from_user.id}_f.jpg"
+                        async with aiohttp.ClientSession() as session:
+                            async with session.get(image_url, timeout=60) as r:
+                                 if r.status == 200:
+                                     with open(temp_path, "wb") as f: f.write(await r.read())
+                                     from aiogram.types import FSInputFile
+                                     await message.answer_photo(photo=FSInputFile(temp_path), caption="🚀 CGI Result (Backup)")
+                                     if os.path.exists(temp_path): os.remove(temp_path)
+                                     if message.from_user.id != ADMIN_ID: db.update_balance(message.from_user.id, -1)
+                                     db.log_stats(message.from_user.id, "cgi")
+                                 else:
+                                     await message.answer("❌ Serverda vaqtinchalik xatolik. Birozdan so'ng urinib ko'ring.")
+                except Exception as fe:
+                    await message.answer(f"⚠️ Xatolik: Server hozirda band yoki rasm formati to'g'ri kelmadi.")
+            else:
+                await message.answer("❌ Gemini dizayn yarata olmadi. Iltimos, qaytadan urinib ko'ring.", parse_mode=None)
             
     except Exception as e:
         error_text = str(e)
