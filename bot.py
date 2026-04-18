@@ -344,56 +344,46 @@ async def handle_cgi_final(message: Message, state: FSMContext):
         vibe, plat = vibe_map.get(choices[0], "Luxury"), plat_map.get(choices[1], "Instagram")
         
         await state.clear()
-        wait_msg = await message.answer("⏳ CGI ishlanmoqda...")
+        wait_msg = await message.answer("⏳ **CGI Artist ishlamoqda...**")
         
         file = await bot.get_file(data.get("cgi_photo"))
         file_url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
         async with aiohttp.ClientSession() as session:
-            async with session.get(file_url) as r: img_data = await r.read()
+            async with session.get(file_url) as r: 
+                if r.status == 200:
+                    img_data = await r.read()
+                else:
+                    return await message.answer("❌ Rasmni yuklab olishda xatolik.")
 
-        # Try Gemini Nano
+        # --- PREMIUM: NANO BANANA ---
         try:
-            res = await asyncio.wait_for(model_cgi.generate_content_async([CGI_PROMPT, {"mime_type":"image/jpeg","data":img_data}]), timeout=80)
-            if res.candidates and res.candidates[0].content.parts:
-                for part in res.candidates[0].content.parts:
+            nano_prompt = f"{CGI_PROMPT}\nVAZIFA: Mahsulotni aynan o'zini saqlagan holda professional reklama yarat.\nVibe: {vibe}\nPlatforma: {plat}"
+            response = await asyncio.wait_for(
+                model_cgi.generate_content_async([nano_prompt, {"mime_type":"image/jpeg","data":img_data}]),
+                timeout=100
+            )
+            if response.candidates and response.candidates[0].content.parts:
+                for part in response.candidates[0].content.parts:
                     if hasattr(part, 'inline_data'):
                         from aiogram.types import BufferedInputFile
-                        await message.answer_photo(photo=BufferedInputFile(part.inline_data.data, filename="cgi.jpg"), caption="💎 Premium Result")
+                        await message.answer_photo(photo=BufferedInputFile(part.inline_data.data, filename="cgi.jpg"), caption="💎 **Premium CGI Result**\n(Google Gemini 3.1 Flash)")
                         return await finish_cgi(message, wait_msg)
-        except Exception as ne: print(f"Nano failed: {ne}")
+            else:
+                await message.answer("❌ Google rasm yarata olmadi. Iltimos, boshqa rasm bilan urinib ko'ring.")
+        except Exception as ne:
+            err = str(ne)
+            print(f"Nano Error: {err}")
+            if "429" in err:
+                await message.answer("⚠️ **Google to'lovni hali tasdiqlamadi.**\n\nSiz to'lov qildingiz, lekin Google serverlarida limitlar ochilishi uchun bir oz vaqt ketadi (15-30 daqiqa). Iltimos, birozdan so'ng qayta urinib ko'ring.")
+            else:
+                await message.answer(f"❌ Xatolik yuz berdi: {err[:100]}")
 
-        # Emergency Fallback to Flux (with Image Recognition)
-        await message.answer("⏳ Premium server kutmoqda, tezkor tizim bilan mahsulotni tahlil qilyapman...")
-        try:
-            # Gemini-dan rasmdagi mahsulotni aniqlashni so'raymiz
-            vision_prompt = "Ushbu rasmdagi mahsulot nima? Faqat nomini ayting (Ingliz tilida). Masalan: 'Sprite can', 'Perfume bottle', 'Sneakers'."
-            vision_res = model.generate_content([vision_prompt, {"mime_type":"image/jpeg","data":img_data}])
-            product_name = vision_res.text.strip() if vision_res.text else "Product"
-            
-            prompt = f"High-end advertising photography of {product_name}, {vibe} style, {plat} format, stunning details, 8k, cinematic"
-            import urllib.parse
-            url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(prompt)}?width=800&height=800&nologo=true"
-            
-            async with aiohttp.ClientSession() as s:
-                async with s.get(url) as r:
-                    if r.status == 200:
-                        from aiogram.types import BufferedInputFile
-                        await message.answer_photo(photo=BufferedInputFile(await r.read(), filename="cgi_f.jpg"), caption=f"🚀 CGI Result ({product_name})")
-                        return await finish_cgi(message, wait_msg)
-        except Exception as vision_err:
-            print(f"Vision call failed: {vision_err}")
-            # Agar Gemini butunlay bloklangan bo'lsa, o'sha eski generic rasm
-            prompt = f"Professional advertising of product, {vibe} style, {plat} format"
-            import urllib.parse
-            url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(prompt)}?width=800&height=800&nologo=true"
-            async with aiohttp.ClientSession() as s:
-                async with s.get(url) as r:
-                    if r.status == 200:
-                        from aiogram.types import BufferedInputFile
-                        await message.answer_photo(photo=BufferedInputFile(await r.read(), filename="cgi_f.jpg"), caption="🚀 Fast Result")
-                        return await finish_cgi(message, wait_msg)
-    except Exception as e: await message.answer(f"❌ Xatolik: {e}")
-    await wait_msg.delete()
+    except Exception as ge: 
+        print(f"Global Error: {ge}")
+        await message.answer(f"❌ Xatolik: {ge}")
+    
+    try: await wait_msg.delete()
+    except: pass
     await message.answer("Menyu:", reply_markup=main_keyboard)
 
 async def finish_cgi(message, wait_msg):
