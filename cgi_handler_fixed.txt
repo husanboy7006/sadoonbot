@@ -1,0 +1,73 @@
+    try:
+        data = await state.get_data()
+        photo_id = data.get("cgi_photo")
+        choices = message.text.split()
+        
+        if len(choices) < 2:
+            return await message.answer("Iltimos, vibe va platformani tanlang (masalan: `1 2`)")
+
+        vibe_map = {"1": "Luxury", "2": "Fresh", "3": "Dark", "4": "Minimal", "5": "Energetic"}
+        plat_map = {"1": "Instagram (4:5)", "2": "Story (9:16)", "3": "Banner (16:9)", "4": "Poster"}
+        
+        vibe = vibe_map.get(choices[0], "Luxury")
+        plat = plat_map.get(choices[1], "Instagram")
+        
+        await state.clear()
+        wait_msg = await message.answer("⏳ **CGI Artist ishlamoqda...**")
+
+        # Rasm yuklash
+        file = await bot.get_file(photo_id)
+        file_url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(file_url) as resp:
+                image_data = await resp.read()
+
+        # --- 1-URINISH: NANO BANANA ---
+        try:
+            nano_prompt = f"{CGI_PROMPT}\nVibe: {vibe}\nPlatforma: {plat}"
+            response = await asyncio.wait_for(
+                model_cgi.generate_content_async([nano_prompt, {"mime_type": "image/jpeg", "data": image_data}]),
+                timeout=100
+            )
+            if response.candidates and response.candidates[0].content.parts:
+                for part in response.candidates[0].content.parts:
+                    if hasattr(part, 'inline_data') and part.inline_data:
+                        from aiogram.types import BufferedInputFile
+                        image_file = BufferedInputFile(part.inline_data.data, filename="cgi_result.jpg")
+                        await message.answer_photo(photo=image_file, caption=f"💎 **Nano Banana Art** (Studio Quality)")
+                        await finish_cgi(message, wait_msg)
+                        return
+        except Exception as ne:
+            print(f"Nano Error (Billing involved): {ne}")
+
+        # --- 2-URINISH: FLUX (Emergency Fallback) ---
+        try:
+            await message.answer("⏳ Tezkor serverda tayyorlanyapti...")
+            simple_prompt = f"Professional advertising product photography, {vibe} style, {plat} format, high resolution, 8k"
+            import urllib.parse
+            safe_p = urllib.parse.quote(simple_prompt)
+            image_url = f"https://image.pollinations.ai/prompt/{safe_p}?width=800&height=800&nologo=true&model=flux"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(image_url, timeout=60) as r:
+                     if r.status == 200:
+                         content = await r.read()
+                         from aiogram.types import BufferedInputFile
+                         image_file = BufferedInputFile(content, filename="flux_result.jpg")
+                         await message.answer_photo(photo=image_file, caption="🚀 CGI Result (Fast Mode)")
+                         await finish_cgi(message, wait_msg)
+                         return
+        except Exception as fe:
+            await message.answer(f"❌ Xatolik: {fe}")
+
+    except Exception as ge:
+        print(f"Global Error: {ge}")
+        await message.answer("⚠️ Tizimda xatolik. Qaytadan urinib ko'ring.")
+
+async def finish_cgi(message, wait_msg):
+    if message.from_user.id != ADMIN_ID:
+        db.update_balance(message.from_user.id, -1)
+    db.log_stats(message.from_user.id, "cgi")
+    try: await wait_msg.delete()
+    except: pass
+    await message.answer("Menyu:", reply_markup=main_keyboard)
