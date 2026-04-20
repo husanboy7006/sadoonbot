@@ -90,7 +90,7 @@ async def check_balance(message: Message):
     await message.answer(f"Sizning balansingiz: {balance} somoniy.\nID: `{message.from_user.id}`", parse_mode="Markdown")
 
 @dp.message(F.text == "🚀 CGI Product Artist (Premium v2)")
-async def cgi_start(message: Message):
+async def cgi_start(message: Message, state: FSMContext):
     await message.answer("📸 Reklama qilmoqchi bo'lgan mahsulotingiz rasmini yuboring.")
     await state.set_state(MixState.waiting_for_cgi_photo)
 
