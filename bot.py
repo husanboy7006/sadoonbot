@@ -16,28 +16,41 @@ from database import Database
 logging.basicConfig(level=logging.INFO)
 
 # --- CONFIG ---
-TOKEN = os.getenv("HF_TOKEN")
-GEMINI_KEY = os.getenv("GEMINI_KEY")
+TOKEN = os.getenv("HF_TOKEN") or os.getenv("BOT_TOKEN") or os.getenv("API_TOKEN")
+GEMINI_KEY = os.getenv("GEMINI_KEY") or os.getenv("GEMINI_API_KEY")
 ADMIN_ID = 5614682028
 
-genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel("gemini-1.5-flash")
-model_cgi = genai.GenerativeModel("gemini-1.5-flash") # Using flash for better stability
+if not TOKEN:
+    print("❌ ERROR: Telegram BOT_TOKEN topilmadi! 'HF_TOKEN' yoki 'BOT_TOKEN' o'zgaruvchisini sozlamalardan tekshiring.")
+    exit(1)
 
-db = Database()
-bot = Bot(token=TOKEN)
-dp = Dispatcher(storage=MemoryStorage())
+try:
+    if GEMINI_KEY:
+        genai.configure(api_key=GEMINI_KEY)
+    
+    model = genai.GenerativeModel("gemini-1.5-flash")
+    model_cgi = genai.GenerativeModel("gemini-1.5-flash") # Using flash for better stability
+    
+    db = Database()
+    bot = Bot(token=TOKEN)
+    dp = Dispatcher(storage=MemoryStorage())
+except Exception as e:
+    print(f"❌ Initialization Error: {e}")
+    exit(1)
 
-# --- DNS PATCH FOR HUGGING FACE ---
-def dns_patch():
-    orig_getaddrinfo = socket.getaddrinfo
-    def patched_getaddrinfo(*args, **kwargs):
-        if args[0] == 'api.telegram.org':
-            return orig_getaddrinfo('149.154.167.220', *args[1:], **kwargs)
-        return orig_getaddrinfo(*args, **kwargs)
-    socket.getaddrinfo = patched_getaddrinfo
+# --- DNS PATCH (Disabled for stability on HF) ---
+# def dns_patch(): ...
 
-dns_patch()
+# --- DNS PATCH FOR HUGGING FACE (Disabled) ---
+# def dns_patch():
+#     orig_getaddrinfo = socket.getaddrinfo
+#     def patched_getaddrinfo(*args, **kwargs):
+#         if args[0] == 'api.telegram.org':
+#             return orig_getaddrinfo('149.154.167.220', *args[1:], **kwargs)
+#         return orig_getaddrinfo(*args, **kwargs)
+#     socket.getaddrinfo = patched_getaddrinfo
+# 
+# dns_patch()
 
 # --- STATES ---
 class MixState(StatesGroup):
