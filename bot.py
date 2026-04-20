@@ -11,6 +11,10 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 import google.generativeai as genai
 from database import Database
+import mixer
+import shutil
+import uuid
+import urllib.parse
 
 # --- LOGGING ---
 logging.basicConfig(level=logging.INFO)
@@ -57,6 +61,11 @@ class MixState(StatesGroup):
     waiting_for_cgi_photo = State()
     waiting_for_cgi_choices = State()
     waiting_translate = State()
+    waiting_download = State()
+    waiting_shazam = State()
+    waiting_clip_photo = State()
+    waiting_clip_audio = State()
+    waiting_feedback = State()
 
 # --- KEYBOARDS ---
 main_keyboard = types.ReplyKeyboardMarkup(
@@ -200,6 +209,136 @@ async def handle_translate(message: Message, state: FSMContext):
         await message.answer(f"❌ Xato: {e}")
     await state.clear()
 
+# --- DOWNLOAD HANDLER ---
+@dp.message(F.text == "📥 Yuklab olish")
+async def download_start(message: Message, state: FSMContext):
+    await message.answer("🔗 **TikTok, Instagram, YouTube yoki Pinterest** havolasini yuboring.")
+    await state.set_state(MixState.waiting_download)
+
+@dp.message(MixState.waiting_download, F.text)
+async def handle_download(message: Message, state: FSMContext):
+    url = extract_url(message.text)
+    if not url:
+        return await message.answer("❌ Iltimos, to'g'ri havola yuboring.")
+    
+    wait_msg = await message.answer("⏳ **Yuklanmoqda...**")
+    uid = str(uuid.uuid4())[:8]
+    output_v = f"temp/v_{uid}.mp4"
+    output_a = f"temp/a_{uid}.mp3"
+
+    try:
+        # Avval video sifatida ko'ramiz
+        success = await mixer.download_video(url, output_v)
+        if success:
+            await message.answer_video(video=FSInputFile(output_v), caption="✅ @sadoon_ai_bot orqali yuklab olindi.")
+        else:
+            # Audio sifatida urinib ko'ramiz
+            success_a = await mixer.download_audio(url, output_a)
+            if success_a:
+                await message.answer_audio(audio=FSInputFile(output_a), caption="🎵 Audio yuklab olindi.")
+            else:
+                await message.answer("❌ Yuklab bo'lmadi. Havola noto'g'ri yoki bot bloklangan.")
+    except Exception as e:
+        await message.answer(f"❌ Xatolik: {e}")
+    finally:
+        await wait_msg.delete()
+        if os.path.exists(output_v): os.remove(output_v)
+        if os.path.exists(output_a): os.remove(output_a)
+        await state.clear()
+
+# --- SHAZAM HANDLER ---
+@dp.message(F.text == "🔍 Shazam")
+async def shazam_start(message: Message, state: FSMContext):
+    await message.answer("🎧 Musiqa parchasini (ovozli xabar, audio yoki video) yuboring.")
+    await state.set_state(MixState.waiting_shazam)
+
+@dp.message(MixState.waiting_shazam, F.audio | F.voice | F.video)
+async def handle_shazam(message: Message, state: FSMContext):
+    wait_msg = await message.answer("🔍 **Musiqa qidirilmoqda...**")
+    file_id = None
+    if message.audio: file_id = message.audio.file_id
+    elif message.voice: file_id = message.voice.file_id
+    elif message.video: file_id = message.video.file_id
+
+    file = await bot.get_file(file_id)
+    temp_path = f"temp/shz_{uuid.uuid4()}.mp3"
+    await bot.download_file(file.file_path, temp_path)
+
+    try:
+        info = await mixer.identify_music(temp_path)
+        if info:
+            text = f"✅ **Topildi!**\n\n🎵 **Nomi:** {info['title']}\n👤 **Ijrochi:** {info['subtitle']}\n\n🔗 [Shazam Havolasi]({info['shazam_url']})"
+            if info['image']:
+                await message.answer_photo(photo=info['image'], caption=text, parse_mode="Markdown")
+            else:
+                await message.answer(text, parse_mode="Markdown")
+        else:
+            await message.answer("❌ Afsuski, musiqa topilmadi.")
+    except Exception as e:
+        await message.answer(f"❌ Shazam hatosi: {e}")
+    finally:
+        await wait_msg.delete()
+        if os.path.exists(temp_path): os.remove(temp_path)
+        await state.clear()
+
+# --- KLIP YARATISH HANDLER ---
+@dp.message(F.text == "🎬 Klip Yaratish (V3) (🖼️ rasm + 🎵 musiqa)")
+async def clip_start(message: Message, state: FSMContext):
+    await message.answer("🖼 **1-qadam:** Klip uchun rasm yuboring.")
+    await state.set_state(MixState.waiting_clip_photo)
+
+@dp.message(MixState.waiting_clip_photo, F.photo)
+async def handle_clip_photo(message: Message, state: FSMContext):
+    await state.update_data(photo=message.photo[-1].file_id)
+    await message.answer("🎵 **2-qadam:** Klip uchun audio (mp3) yuboring.")
+    await state.set_state(MixState.waiting_clip_audio)
+
+@dp.message(MixState.waiting_clip_audio, F.audio)
+async def handle_clip_audio(message: Message, state: FSMContext):
+    data = await state.get_data()
+    wait_msg = await message.answer("🎬 **Klip tayyorlanmoqda...** (bu 1-2 daqiqa olishi mumkin)")
+    
+    uid = str(uuid.uuid4())[:8]
+    p_path = f"temp/p_{uid}.jpg"
+    a_path = f"temp/a_{uid}.mp3"
+    v_path = f"output/clip_{uid}.mp4"
+
+    try:
+        photo = await bot.get_file(data['photo'])
+        await bot.download_file(photo.file_path, p_path)
+        
+        audio = await bot.get_file(message.audio.file_id)
+        await bot.download_file(audio.file_path, a_path)
+
+        success = await mixer.mix_image_audio(p_path, a_path, v_path)
+        if success:
+            await message.answer_video(video=FSInputFile(v_path), caption="🎬 Klip tayyor! @sadoon_ai_bot")
+        else:
+            await message.answer("❌ Klip yaratishda xatolik yub berdi.")
+    except Exception as e:
+        await message.answer(f"❌ Xato: {e}")
+    finally:
+        await wait_msg.delete()
+        for f in [p_path, a_path, v_path]:
+            if os.path.exists(f): os.remove(f)
+        await state.clear()
+
+# --- OTHER HANDLERS ---
+@dp.message(F.text == "✍️ Takliflar")
+async def feedback_start(message: Message, state: FSMContext):
+    await message.answer("✍️ Botni yaxshilash bo'yicha taklifingizni yozib qoldiring.")
+    await state.set_state(MixState.waiting_feedback)
+
+@dp.message(MixState.waiting_feedback, F.text)
+async def handle_feedback(message: Message, state: FSMContext):
+    await bot.send_message(ADMIN_ID, f"📩 **Yangi taklif:**\nKimdan: {message.from_user.full_name}\nID: {message.from_user.id}\n\nMatn: {message.text}")
+    await message.answer("✅ Taklifingiz adminlarga yuborildi. Rahmat!")
+    await state.clear()
+
+@dp.message(F.text == "💰 To'ldirish")
+async def refill_start(message: Message):
+    await message.answer(f"💰 **Balansni to'ldirish uchun adminga murojaat qiling:**\nID: `{message.from_user.id}`\nAdmin: @husanjon007", parse_mode="Markdown")
+
 def extract_url(text: str):
     import re
     urls = re.findall(r'http[s]?://[^\s]+', text)
@@ -208,12 +347,11 @@ def extract_url(text: str):
 # --- BASIC OTHER HANDLERS ---
 @dp.message()
 async def echo(message: Message):
-    if message.text in ["📥 Yuklab olish", "🔍 Shazam", "✍️ Takliflar", "💰 To'ldirish", "🎬 Klip Yaratish (V3) (🖼️ rasm + 🎵 musiqa)"]:
-        await message.answer("🛠 Bu bo'lim hozircha test rejimida.")
-    else:
-        await message.answer("Asosiy menyu:", reply_markup=main_keyboard)
+    await message.answer("Asosiy menyu:", reply_markup=main_keyboard)
 
 async def start_app():
+    if not os.path.exists("temp"): os.makedirs("temp")
+    if not os.path.exists("output"): os.makedirs("output")
     db.init_db()
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
