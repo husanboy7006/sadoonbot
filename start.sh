@@ -1,20 +1,16 @@
 #!/bin/bash
-echo "Starting FastAPI server on port 7860..."
-python -u server.py &
+echo "===== Application Startup at $(date '+%Y-%m-%d %H:%M:%S') ====="
+echo ""
 
-# API tayyor bo'lishini va tarmoq ochilishini 15 soniya kutamiz
-echo "Waiting for Hugging Face network to become ready (15s)..."
-sleep 15
+echo "Starting Sadoon API + Bot (Webhook Mode) on port 7860..."
 
 # Tarmoq diagnostikasi
+sleep 5
 echo "=== NETWORK DIAGNOSTICS ==="
 echo "Checking google.com..."
 curl -I -s --connect-timeout 5 https://google.com | grep HTTP || echo "Google fails"
-echo "Checking api.telegram.org via curl..."
-curl -I -s --connect-timeout 5 https://api.telegram.org | grep HTTP || echo "Telegram API fails"
-echo "Resolving api.telegram.org IP..."
-getent hosts api.telegram.org || echo "Could not resolve Telegram DNS"
 echo "==========================="
 
-echo "Starting Telegram bot..."
-python -u bot.py
+# Server + Bot (webhook mode) ni ishga tushirish
+echo "Starting server with webhook bot..."
+python -u server.py

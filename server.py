@@ -1,24 +1,17 @@
 from fastapi import FastAPI, Request, Form, Query, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional
 import uvicorn
 import mixer
 import os
 import uuid
-import socket
+import asyncio
+import logging
 
-# --- UNIVERSAL DNS PATCH FOR HUGGING FACE ---
-def apply_dns_patch():
-    old_getaddrinfo = socket.getaddrinfo
-    def patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
-        if host == "api.telegram.org":
-            return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', ('149.154.167.220', port))]
-        return old_getaddrinfo(host, port, family, type, proto, flags)
-    socket.getaddrinfo = patched_getaddrinfo
-
-apply_dns_patch()
+logging.basicConfig(level=logging.INFO)
 
 app = FastAPI()
 
@@ -41,9 +34,56 @@ async def check_auth(x_api_key: Optional[str]):
     if SADOON_API_KEY and x_api_key != SADOON_API_KEY:
         raise HTTPException(status_code=403, detail="Unauthorized access")
 
+# --- TELEGRAM WEBHOOK ---
+bot_module = None
+
+@app.on_event("startup")
+async def on_startup():
+    global bot_module
+    print("[*] Loading bot module...")
+    import bot as bot_module
+    
+    # Webhook'ni o'rnatishga harakat qilamiz
+    webhook_url = f"{BASE_URL}/webhook/{bot_module.TOKEN}"
+    print(f"[*] Setting webhook to: {webhook_url}")
+    try:
+        await bot_module.bot.set_webhook(
+            url=webhook_url,
+            drop_pending_updates=True
+        )
+        print("[*] ✅ Webhook successfully set!")
+    except Exception as e:
+        print(f"[!] ⚠️ Could not set webhook automatically: {e}")
+        print(f"[!] Please run this command from your LOCAL machine:")
+        print(f"[!] curl -X POST https://api.telegram.org/bot{bot_module.TOKEN}/setWebhook?url={webhook_url}&drop_pending_updates=true")
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    if bot_module:
+        try:
+            await bot_module.bot.session.close()
+        except: pass
+
+@app.post("/webhook/{token}")
+async def webhook_handler(token: str, request: Request):
+    """Telegram webhook endpoint"""
+    if not bot_module or token != bot_module.TOKEN:
+        return JSONResponse({"error": "Invalid token"}, status_code=403)
+    
+    try:
+        data = await request.json()
+        from aiogram.types import Update
+        update = Update.model_validate(data, context={"bot": bot_module.bot})
+        await bot_module.dp.feed_update(bot=bot_module.bot, update=update)
+    except Exception as e:
+        print(f"[!] Webhook processing error: {e}")
+    
+    return JSONResponse({"ok": True})
+
+# --- EXISTING API ENDPOINTS ---
 @app.get("/")
 async def read_root():
-    return {"status": "Sadoon API and Bot are running", "auth_enabled": bool(SADOON_API_KEY)}
+    return {"status": "Sadoon API and Bot are running (Webhook mode)", "auth_enabled": bool(SADOON_API_KEY)}
 
 @app.post("/api/download-video")
 async def api_download_video(request: Request, url: Optional[str] = Form(None), x_api_key: Optional[str] = Header(None)):
