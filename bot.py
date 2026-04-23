@@ -249,13 +249,11 @@ async def start_app():
     
     # Initialization INSIDE the loop
     from aiogram.client.session.aiohttp import AiohttpSession
-    from aiohttp import TCPConnector
     
     if GEMINI_KEY:
         genai.configure(api_key=GEMINI_KEY)
     
-    connector = TCPConnector(family=socket.AF_INET, verify_ssl=False)
-    session = AiohttpSession(connector=connector)
+    session = AiohttpSession()
     bot = Bot(token=TOKEN, session=session)
     dp = Dispatcher(storage=MemoryStorage())
     
