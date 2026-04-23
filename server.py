@@ -67,8 +67,8 @@ async def on_shutdown():
 @app.post("/webhook/{token}")
 async def webhook_handler(token: str, request: Request):
     """Telegram webhook endpoint"""
-    if not bot_module or token != bot_module.TOKEN:
-        return JSONResponse({"error": "Invalid token"}, status_code=403)
+    if not bot_module:
+        return JSONResponse({"error": "Bot not loaded"}, status_code=500)
     
     try:
         data = await request.json()
