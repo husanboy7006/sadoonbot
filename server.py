@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Form, Query
+from fastapi import FastAPI, Request, Form, Query, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -7,6 +7,18 @@ import uvicorn
 import mixer
 import os
 import uuid
+import socket
+
+# --- UNIVERSAL DNS PATCH FOR HUGGING FACE ---
+def apply_dns_patch():
+    old_getaddrinfo = socket.getaddrinfo
+    def patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+        if host == "api.telegram.org":
+            return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', ('149.154.167.220', port))]
+        return old_getaddrinfo(host, port, family, type, proto, flags)
+    socket.getaddrinfo = patched_getaddrinfo
+
+apply_dns_patch()
 
 app = FastAPI()
 
@@ -22,22 +34,21 @@ if not os.path.exists("output"): os.makedirs("output")
 if not os.path.exists("temp"): os.makedirs("temp")
 app.mount("/output", StaticFiles(directory="output"), name="output")
 
-BASE_URL = "https://husanjon007-sadoon-api.hf.space"
+BASE_URL = os.getenv("BASE_URL", "https://husanjon007-sadoon-api.hf.space")
+SADOON_API_KEY = os.getenv("SADOON_API_KEY")
 
-class MixRequest(BaseModel):
-    url: str
-    image_url: Optional[str] = None
+async def check_auth(x_api_key: Optional[str]):
+    if SADOON_API_KEY and x_api_key != SADOON_API_KEY:
+        raise HTTPException(status_code=403, detail="Unauthorized access")
 
 @app.get("/")
 async def read_root():
-    return {"status": "Sadoon API and Bot are running"}
-
-# Vercel sayti POST yuboryapti, shuning uchun barchasini POST qilamiz
-# FormData va JSON ikkalasini ham qo'llab-quvvatlaymiz
+    return {"status": "Sadoon API and Bot are running", "auth_enabled": bool(SADOON_API_KEY)}
 
 @app.post("/api/download-video")
-async def api_download_video(request: Request, url: Optional[str] = Form(None)):
-    # Agar FormData bo'lmasa, JSON dan qidiramiz
+async def api_download_video(request: Request, url: Optional[str] = Form(None), x_api_key: Optional[str] = Header(None)):
+    await check_auth(x_api_key)
+    
     if url is None:
         try:
             data = await request.json()
@@ -59,7 +70,9 @@ async def api_download_video(request: Request, url: Optional[str] = Form(None)):
         return {"status": "error", "message": str(e)}
 
 @app.post("/api/mix")
-async def api_mix(request: Request, url: Optional[str] = Form(None)):
+async def api_mix(request: Request, url: Optional[str] = Form(None), x_api_key: Optional[str] = Header(None)):
+    await check_auth(x_api_key)
+    
     if url is None:
         try:
             data = await request.json()
@@ -78,7 +91,9 @@ async def api_mix(request: Request, url: Optional[str] = Form(None)):
         return {"status": "error", "message": str(e)}
 
 @app.post("/api/shazam")
-async def api_shazam(request: Request, url: Optional[str] = Form(None)):
+async def api_shazam(request: Request, url: Optional[str] = Form(None), x_api_key: Optional[str] = Header(None)):
+    await check_auth(x_api_key)
+    
     if url is None:
         try:
             data = await request.json()

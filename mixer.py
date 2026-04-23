@@ -14,41 +14,6 @@ import time
 from pydub import AudioSegment
 from shazamio import Shazam
 
-# [UNIVERSAL DNS PATCH] - Hugging Face dagi DNS muammolarini hal qilish
-ctx = ssl._create_unverified_context()
-old_getaddrinfo = socket.getaddrinfo
-dns_cache = {}
-in_dns_lookup = False
-
-def is_ip(host):
-    return re.match(r"^\d{1,3}(\.\d{1,3}){3}$", host) is not None
-
-def new_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
-    global in_dns_lookup
-    if in_dns_lookup or is_ip(host) or host in ["localhost", "127.0.0.1", "0.0.0.0"]:
-        return old_getaddrinfo(host, port, family, type, proto, flags)
-    if host == "api.telegram.org":
-        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', ('149.154.167.220', port))]
-    if host in dns_cache:
-        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', (dns_cache[host], port))]
-    try:
-        in_dns_lookup = True
-        url = f"https://1.1.1.1/dns-query?name={host}&type=A"
-        req = urllib.request.Request(url, headers={'accept': 'application/dns-json'})
-        with urllib.request.urlopen(req, timeout=5, context=ctx) as response:
-            data = json.loads(response.read().decode())
-            if "Answer" in data:
-                for ans in data["Answer"]:
-                    if ans["type"] == 1: # A record
-                        ip = ans["data"]
-                        dns_cache[host] = ip
-                        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', (ip, port))]
-    except: pass
-    finally: in_dns_lookup = False
-    return old_getaddrinfo(host, port, family, type, proto, flags)
-
-socket.getaddrinfo = new_getaddrinfo
-
 # FFmpeg yo'lini aniqlash
 ffmpeg_binary = "ffmpeg"
 if os.path.exists("ffmpeg.exe"): ffmpeg_binary = os.path.abspath("ffmpeg.exe")

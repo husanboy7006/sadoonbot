@@ -3,6 +3,12 @@ import asyncio
 import os
 import aiohttp
 import socket
+import ssl
+import json
+import urllib.request
+import shutil
+import uuid
+import urllib.parse
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, FSInputFile, BufferedInputFile
@@ -12,9 +18,18 @@ from aiogram.fsm.storage.memory import MemoryStorage
 import google.generativeai as genai
 from database import Database
 import mixer
-import shutil
-import uuid
-import urllib.parse
+
+# --- UNIVERSAL DNS PATCH FOR HUGGING FACE ---
+def apply_dns_patch():
+    old_getaddrinfo = socket.getaddrinfo
+    def patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+        if host == "api.telegram.org":
+            # Direct IP for Telegram (DC4)
+            return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', ('149.154.167.220', port))]
+        return old_getaddrinfo(host, port, family, type, proto, flags)
+    socket.getaddrinfo = patched_getaddrinfo
+
+apply_dns_patch()
 
 # --- LOGGING ---
 logging.basicConfig(level=logging.INFO)
@@ -25,7 +40,7 @@ GEMINI_KEY = os.getenv("GEMINI_KEY") or os.getenv("GEMINI_API_KEY")
 ADMIN_ID = 5614682028
 
 if not TOKEN:
-    print("❌ ERROR: Telegram BOT_TOKEN topilmadi! 'HF_TOKEN' yoki 'BOT_TOKEN' o'zgaruvchisini sozlamalardan tekshiring.")
+    print("❌ ERROR: Telegram BOT_TOKEN topilmadi!")
     exit(1)
 
 try:
@@ -33,28 +48,30 @@ try:
         genai.configure(api_key=GEMINI_KEY)
     
     model = genai.GenerativeModel("gemini-1.5-flash")
-    model_cgi = genai.GenerativeModel("gemini-1.5-flash") # Using flash for better stability
+    model_cgi = genai.GenerativeModel("gemini-1.5-flash")
     
     db = Database()
-    bot = Bot(token=TOKEN)
+    
+    # --- ADVANCED SESSION FOR HUGGING FACE ---
+    from aiogram.client.session.aiohttp import AiohttpSession
+    from aiohttp import TCPConnector
+    
+    # Connector settings
+    connector = TCPConnector(
+        family=socket.AF_INET, 
+        verify_ssl=False, 
+        use_dns_cache=True
+    )
+    
+    # Timeout settings
+    timeout = aiohttp.ClientTimeout(total=60, connect=30, sock_read=30)
+    session = AiohttpSession(connector=connector, timeout=timeout)
+    
+    bot = Bot(token=TOKEN, session=session)
     dp = Dispatcher(storage=MemoryStorage())
 except Exception as e:
     print(f"❌ Initialization Error: {e}")
     exit(1)
-
-# --- DNS PATCH (Disabled for stability on HF) ---
-# def dns_patch(): ...
-
-# --- DNS PATCH FOR HUGGING FACE (Disabled) ---
-# def dns_patch():
-#     orig_getaddrinfo = socket.getaddrinfo
-#     def patched_getaddrinfo(*args, **kwargs):
-#         if args[0] == 'api.telegram.org':
-#             return orig_getaddrinfo('149.154.167.220', *args[1:], **kwargs)
-#         return orig_getaddrinfo(*args, **kwargs)
-#     socket.getaddrinfo = patched_getaddrinfo
-# 
-# dns_patch()
 
 # --- STATES ---
 class MixState(StatesGroup):
@@ -90,7 +107,12 @@ Siz dunyo darajasidagi AI Product Visualization Director, CGI artist va reklama 
 # --- HANDLERS ---
 @dp.message(Command("start"))
 async def start(message: Message):
-    db.add_user(message.from_user.id, message.from_user.full_name)
+    print(f"[*] /start received from {message.from_user.id}")
+    try:
+        db.add_user(message.from_user.id, message.from_user.full_name)
+    except Exception as e:
+        print(f"[!] Database Error in /start: {e}")
+    
     await message.answer(f"Xush kelibsiz, {message.from_user.full_name}! Sadoon AI botiga xush kelibsiz.", reply_markup=main_keyboard)
 
 @dp.message(F.text == "💎 Balans")
@@ -158,8 +180,6 @@ async def handle_cgi_final(message: Message, state: FSMContext):
                         return await finish_cgi(message, wait_msg)
         except Exception as e:
             print(f"Nano failed: {e}")
-            if "429" not in str(e):
-                await message.answer(f"⚠️ Premium tizimda xatolik: {str(e)[:50]}")
 
         # 2. Smart Fallback (Flux + Vision)
         await message.answer("⏳ Premium limit kutmoqda... 'Smart Fallback' rejimi ishga tushdi.")
@@ -169,7 +189,6 @@ async def handle_cgi_final(message: Message, state: FSMContext):
             p_name = v_res.text.strip() if v_res.text else "Product"
             
             f_prompt = f"Professional studio product photography of {p_name}, {vibe} style, {plat} aspect ratio, cinematic lighting, high resolution, 8k"
-            import urllib.parse
             flux_url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(f_prompt)}?width=1024&height=1024&nologo=true"
             
             async with aiohttp.ClientSession() as s:
@@ -209,7 +228,6 @@ async def handle_translate(message: Message, state: FSMContext):
         await message.answer(f"❌ Xato: {e}")
     await state.clear()
 
-# --- DOWNLOAD HANDLER ---
 @dp.message(F.text == "📥 Yuklab olish")
 async def download_start(message: Message, state: FSMContext):
     await message.answer("🔗 **TikTok, Instagram, YouTube yoki Pinterest** havolasini yuboring.")
@@ -227,12 +245,10 @@ async def handle_download(message: Message, state: FSMContext):
     output_a = f"temp/a_{uid}.mp3"
 
     try:
-        # Avval video sifatida ko'ramiz
         success = await mixer.download_video(url, output_v)
         if success:
             await message.answer_video(video=FSInputFile(output_v), caption="✅ @sadoon_ai_bot orqali yuklab olindi.")
         else:
-            # Audio sifatida urinib ko'ramiz
             success_a = await mixer.download_audio(url, output_a)
             if success_a:
                 await message.answer_audio(audio=FSInputFile(output_a), caption="🎵 Audio yuklab olindi.")
@@ -246,7 +262,6 @@ async def handle_download(message: Message, state: FSMContext):
         if os.path.exists(output_a): os.remove(output_a)
         await state.clear()
 
-# --- SHAZAM HANDLER ---
 @dp.message(F.text == "🔍 Shazam")
 async def shazam_start(message: Message, state: FSMContext):
     await message.answer("🎧 Musiqa parchasini (ovozli xabar, audio yoki video) yuboring.")
@@ -281,7 +296,6 @@ async def handle_shazam(message: Message, state: FSMContext):
         if os.path.exists(temp_path): os.remove(temp_path)
         await state.clear()
 
-# --- KLIP YARATISH HANDLER ---
 @dp.message(F.text == "🎬 Klip Yaratish (V3) (🖼️ rasm + 🎵 musiqa)")
 async def clip_start(message: Message, state: FSMContext):
     await message.answer("🖼 **1-qadam:** Klip uchun rasm yuboring.")
@@ -296,7 +310,7 @@ async def handle_clip_photo(message: Message, state: FSMContext):
 @dp.message(MixState.waiting_clip_audio, F.audio)
 async def handle_clip_audio(message: Message, state: FSMContext):
     data = await state.get_data()
-    wait_msg = await message.answer("🎬 **Klip tayyorlanmoqda...** (bu 1-2 daqiqa olishi mumkin)")
+    wait_msg = await message.answer("🎬 **Klip tayyorlanmoqda...**")
     
     uid = str(uuid.uuid4())[:8]
     p_path = f"temp/p_{uid}.jpg"
@@ -323,7 +337,6 @@ async def handle_clip_audio(message: Message, state: FSMContext):
             if os.path.exists(f): os.remove(f)
         await state.clear()
 
-# --- OTHER HANDLERS ---
 @dp.message(F.text == "✍️ Takliflar")
 async def feedback_start(message: Message, state: FSMContext):
     await message.answer("✍️ Botni yaxshilash bo'yicha taklifingizni yozib qoldiring.")
@@ -344,17 +357,26 @@ def extract_url(text: str):
     urls = re.findall(r'http[s]?://[^\s]+', text)
     return urls[0].strip('.,()!?*') if urls else None
 
-# --- BASIC OTHER HANDLERS ---
 @dp.message()
 async def echo(message: Message):
     await message.answer("Asosiy menyu:", reply_markup=main_keyboard)
 
 async def start_app():
+    print("[*] Bot starting sequence initiated...")
     if not os.path.exists("temp"): os.makedirs("temp")
     if not os.path.exists("output"): os.makedirs("output")
+    
+    print("[*] Initializing database...")
     db.init_db()
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
+    
+    print("[*] Starting polling... (If this is the last message, polling has started)")
+    # Webhookni o'chirishni vaqtincha o'chirib turamiz (Hanging muammosi uchun)
+    # await bot.delete_webhook(drop_pending_updates=True) 
+    
+    try:
+        await dp.start_polling(bot)
+    except Exception as e:
+        print(f"[!] Polling Error: {e}")
 
 if __name__ == "__main__":
     asyncio.run(start_app())
