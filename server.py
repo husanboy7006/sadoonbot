@@ -180,31 +180,13 @@ async def webhook_handler(request: Request):
         try:
             print(f"[*] AI Generating translation for: {text[:20]}...")
             
-            # Try full model names
-            available_models = []
+            # Use the models confirmed to be in your list
             try:
-                # Get list of models for debugging if it fails
-                for m in genai.list_models():
-                    if 'generateContent' in m.supported_generation_methods:
-                        available_models.append(m.name)
-                
-                # Try primary model
-                ai_model = genai.GenerativeModel("models/gemini-1.5-flash")
+                ai_model = genai.GenerativeModel("models/gemini-2.0-flash")
                 response = ai_model.generate_content(f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {text}")
-            except Exception as e1:
-                print(f"[!] Primary model failed: {e1}")
-                try:
-                    # Try secondary model
-                    ai_model = genai.GenerativeModel("models/gemini-pro")
-                    response = ai_model.generate_content(f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {text}")
-                except Exception as e2:
-                    # If both fail, show available models to the user so I can see them
-                    model_list = "\n".join(available_models) if available_models else "Ro'yxat bo'sh"
-                    return JSONResponse({
-                        "method": "sendMessage",
-                        "chat_id": chat_id,
-                        "text": f"❌ AI xatolik: Modellarni yuklab bo'lmadi.\n\nSiz uchun ochiq modellar:\n{model_list}\n\nXatolik: {str(e2)}"
-                    })
+            except:
+                ai_model = genai.GenerativeModel("models/gemini-2.5-flash")
+                response = ai_model.generate_content(f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {text}")
             
             return JSONResponse({
                 "method": "sendMessage",
@@ -212,7 +194,7 @@ async def webhook_handler(request: Request):
                 "text": response.text
             })
         except Exception as e:
-            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": f"❌ Tizim xatoligi: {str(e)}"})
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": f"❌ AI xatolik: {str(e)}"})
 
     if current_state == "waiting_cgi" and text and not text.startswith("/"):
         set_local_state(user_id, None)
