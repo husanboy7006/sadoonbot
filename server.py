@@ -1,14 +1,32 @@
-from fastapi import FastAPI, Request, Form, Header, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
-from typing import Optional
 import uvicorn
-import mixer
 import os
 import uuid
 import json
 import logging
+import socket
+
+# --- DNS PATCH (Fixes "Name or service not known" on Hugging Face) ---
+def dns_patch():
+    try:
+        old_getaddrinfo = socket.getaddrinfo
+        def new_getaddrinfo(*args, **kwargs):
+            try:
+                return old_getaddrinfo(*args, **kwargs)
+            except socket.gaierror:
+                import requests
+                host = args[0]
+                if "supabase.co" in host:
+                    # Supabase uchun zahira IP (vaqtinchalik yechim)
+                    return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('104.21.50.110', args[1]))]
+                raise
+        socket.getaddrinfo = new_getaddrinfo
+        print("[*] DNS Patch applied successfully.")
+    except Exception as e:
+        print(f"[!] DNS Patch failed: {e}")
+
+dns_patch()
+
+from fastapi import FastAPI, Request, Form, Header, HTTPException
 
 logging.basicConfig(level=logging.INFO)
 
