@@ -50,136 +50,101 @@ MAIN_KEYBOARD = json.dumps({
     "resize_keyboard": True
 })
 
-# --- WEBHOOK HANDLER (Javob webhook orqali qaytadi, chiquvchi ulanish kerak emas) ---
+# --- GEMINI INITIALIZATION ---
+import google.generativeai as genai
+GEMINI_KEY = os.getenv("GEMINI_KEY") or os.getenv("GEMINI_API_KEY")
+if GEMINI_KEY:
+    genai.configure(api_key=GEMINI_KEY)
+model = genai.GenerativeModel("gemini-1.5-flash")
+
+# --- SIMPLE STATE MANAGEMENT (In-memory) ---
+user_states = {}
+
+# --- WEBHOOK HANDLER ---
 @app.post("/webhook/{token}")
 async def webhook_handler(token: str, request: Request):
     data = await request.json()
-    
     if "message" not in data:
         return JSONResponse({"ok": True})
     
     msg = data["message"]
     chat_id = msg["chat"]["id"]
     text = msg.get("text", "")
-    user = msg.get("from", {})
-    user_id = user.get("id")
-    first_name = user.get("first_name", "")
+    user_id = str(msg["from"]["id"])
+    first_name = msg["from"].get("first_name", "")
     
-    print(f"[*] Webhook: '{text}' from {user_id} ({first_name})")
-    
+    print(f"[*] Webhook: '{text}' from {user_id}")
+
+    # State check
+    current_state = user_states.get(user_id)
+
     # /start
     if text == "/start":
+        user_states[user_id] = None
         try: db.add_user(user_id, first_name)
         except: pass
         return JSONResponse({
             "method": "sendMessage",
             "chat_id": chat_id,
-            "text": f"Xush kelibsiz, {first_name}! Sadoon AI botiga xush kelibsiz. 🚀",
+            "text": f"Xush kelibsiz, {first_name}! Sadoon AI botiga xush kelibsiz. 🚀\n\nYangi API tizimi ishga tushirildi.",
             "reply_markup": MAIN_KEYBOARD
         })
-    
+
+    # Tilmoch AI activation
+    if text == "🌐 Tilmoch AI":
+        user_states[user_id] = "waiting_translate"
+        return JSONResponse({
+            "method": "sendMessage",
+            "chat_id": chat_id,
+            "text": "✍️ Tarjima qilinadigan xabarni yuboring."
+        })
+
+    # CGI activation
+    if text == "🚀 CGI Product Artist (Premium v2)":
+        user_states[user_id] = "waiting_cgi"
+        return JSONResponse({
+            "method": "sendMessage",
+            "chat_id": chat_id,
+            "text": "📸 Reklama qilmoqchi bo'lgan mahsulotingiz nomini yozing (Hozircha faqat matnli CGI promp ishlaydi)."
+        })
+
+    # Handling States
+    if current_state == "waiting_translate" and text:
+        user_states[user_id] = None
+        try:
+            response = model.generate_content(f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {text}")
+            return JSONResponse({
+                "method": "sendMessage",
+                "chat_id": chat_id,
+                "text": response.text
+            })
+        except Exception as e:
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": f"❌ AI xatolik: {str(e)}"})
+
+    if current_state == "waiting_cgi" and text:
+        user_states[user_id] = None
+        try:
+            flux_url = f"https://image.pollinations.ai/prompt/Professional studio product photography of {text}, luxury style, cinematic lighting, high resolution, 8k?nologo=true"
+            return JSONResponse({
+                "method": "sendMessage",
+                "chat_id": chat_id,
+                "text": f"✅ **CGI Artist natijasi:**\n\n🖼 [Rasmni yuklab olish]({flux_url})",
+                "parse_mode": "Markdown"
+            })
+        except Exception as e:
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": f"❌ CGI xatolik: {str(e)}"})
+
     # 💎 Balans
     if text == "💎 Balans":
         balance = db.get_balance(user_id)
         return JSONResponse({
             "method": "sendMessage",
             "chat_id": chat_id,
-            "text": f"💎 Sizning balansingiz: {balance} somoniy.\n🆔 ID: {user_id}"
+            "text": f"💎 Sizning balansingiz: {balance} somoniy.\n🆔 ID: `{user_id}`",
+            "parse_mode": "Markdown"
         })
-    
-    # 💰 To'ldirish
-    if text == "💰 To'ldirish":
-        return JSONResponse({
-            "method": "sendMessage",
-            "chat_id": chat_id,
-            "text": f"💰 Balansni to'ldirish uchun adminga murojaat qiling:\n🆔 ID: {user_id}\n👤 Admin: @husanjon007"
-        })
-    
-    # ✍️ Takliflar
-    if text == "✍️ Takliflar":
-        return JSONResponse({
-            "method": "sendMessage",
-            "chat_id": chat_id,
-            "text": "✍️ Botni yaxshilash bo'yicha taklifingizni yozib qoldiring.\n\nTaklifingizni oddiy xabar sifatida yozing, admin ko'radi."
-        })
-    
-    # 📥 Yuklab olish
-    if text == "📥 Yuklab olish":
-        return JSONResponse({
-            "method": "sendMessage",
-            "chat_id": chat_id,
-            "text": "🔗 TikTok, Instagram, YouTube yoki Pinterest havolasini yuboring."
-        })
-    
-    # 🔍 Shazam
-    if text == "🔍 Shazam":
-        return JSONResponse({
-            "method": "sendMessage",
-            "chat_id": chat_id,
-            "text": "🎧 Musiqa parchasini (ovozli xabar, audio yoki video) yuboring."
-        })
-    
-    # 🌐 Tilmoch AI
-    if text == "🌐 Tilmoch AI":
-        return JSONResponse({
-            "method": "sendMessage",
-            "chat_id": chat_id,
-            "text": "✍️ Tarjima qilinadigan matnni yuboring."
-        })
-    
-    # 🚀 CGI
-    if text == "🚀 CGI Product Artist (Premium v2)":
-        return JSONResponse({
-            "method": "sendMessage",
-            "chat_id": chat_id,
-            "text": "📸 Reklama qilmoqchi bo'lgan mahsulotingiz rasmini yuboring."
-        })
-    
-    # 🎬 Klip
-    if text == "🎬 Klip Yaratish (V3) (🖼️ rasm + 🎵 musiqa)":
-        return JSONResponse({
-            "method": "sendMessage",
-            "chat_id": chat_id,
-            "text": "🖼 1-qadam: Klip uchun rasm yuboring."
-        })
-    
-    # URL Detection (download)
-    if text and ("http://" in text or "https://" in text):
-        import re
-        urls = re.findall(r'http[s]?://[^\s]+', text)
-        if urls:
-            url = urls[0].strip('.,()!?*')
-            uid = str(uuid.uuid4())[:8]
-            output = f"temp/v_{uid}.mp4"
-            try:
-                success = await mixer.download_video(url, output)
-                if success:
-                    db.log_stats(user_id, "download")
-                    # Video faylni URL orqali yuborish
-                    import shutil
-                    final_path = f"output/vid_{uid}.mp4"
-                    shutil.move(output, final_path)
-                    return JSONResponse({
-                        "method": "sendMessage",
-                        "chat_id": chat_id,
-                        "text": f"✅ Yuklab olindi!\n\n📥 Yuklab olish havolasi:\n{BASE_URL}/output/vid_{uid}.mp4"
-                    })
-                else:
-                    return JSONResponse({
-                        "method": "sendMessage",
-                        "chat_id": chat_id,
-                        "text": "❌ Yuklab bo'lmadi. Havola noto'g'ri yoki bloklangan."
-                    })
-            except Exception as e:
-                return JSONResponse({
-                    "method": "sendMessage",
-                    "chat_id": chat_id,
-                    "text": f"❌ Xatolik: {str(e)[:200]}"
-                })
-            finally:
-                if os.path.exists(output): os.remove(output)
-    
-    # Default response
+
+    # Default
     return JSONResponse({
         "method": "sendMessage",
         "chat_id": chat_id,
