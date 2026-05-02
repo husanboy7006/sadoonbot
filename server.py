@@ -73,26 +73,27 @@ async def webhook_handler(token: str, request: Request):
     user_id = str(msg["from"]["id"])
     first_name = msg["from"].get("first_name", "")
     
-    print(f"[*] Webhook: '{text}' from {user_id}")
-
-    # State check
-    current_state = user_states.get(user_id)
+    # Get current state from Database (reliable)
+    user_data = db.get_user(user_id)
+    current_state = user_data.get("metadata", {}).get("state") if user_data else None
+    
+    print(f"[*] Webhook: '{text}' from {user_id} (State: {current_state})")
 
     # /start
     if text == "/start":
-        user_states[user_id] = None
+        db.update_user_metadata(user_id, {"state": None})
         try: db.add_user(user_id, first_name)
         except: pass
         return JSONResponse({
             "method": "sendMessage",
             "chat_id": chat_id,
-            "text": f"Xush kelibsiz, {first_name}! Sadoon AI botiga xush kelibsiz. 🚀\n\nYangi API tizimi ishga tushirildi.",
+            "text": f"Xush kelibsiz, {first_name}! 🚀\nSadoon AI tizimi yangilandi va bazaga ulandi.",
             "reply_markup": MAIN_KEYBOARD
         })
 
     # Tilmoch AI activation
     if text == "🌐 Tilmoch AI":
-        user_states[user_id] = "waiting_translate"
+        db.update_user_metadata(user_id, {"state": "waiting_translate"})
         return JSONResponse({
             "method": "sendMessage",
             "chat_id": chat_id,
@@ -101,17 +102,18 @@ async def webhook_handler(token: str, request: Request):
 
     # CGI activation
     if text == "🚀 CGI Product Artist (Premium v2)":
-        user_states[user_id] = "waiting_cgi"
+        db.update_user_metadata(user_id, {"state": "waiting_cgi"})
         return JSONResponse({
             "method": "sendMessage",
             "chat_id": chat_id,
-            "text": "📸 Reklama qilmoqchi bo'lgan mahsulotingiz nomini yozing (Hozircha faqat matnli CGI promp ishlaydi)."
+            "text": "📸 Mahsulot nomini yozing."
         })
 
     # Handling States
     if current_state == "waiting_translate" and text:
-        user_states[user_id] = None
+        db.update_user_metadata(user_id, {"state": None})
         try:
+            print(f"[*] AI Generating translation for: {text[:20]}...")
             response = model.generate_content(f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {text}")
             return JSONResponse({
                 "method": "sendMessage",
@@ -119,20 +121,18 @@ async def webhook_handler(token: str, request: Request):
                 "text": response.text
             })
         except Exception as e:
+            print(f"[!] AI Error: {e}")
             return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": f"❌ AI xatolik: {str(e)}"})
 
     if current_state == "waiting_cgi" and text:
-        user_states[user_id] = None
-        try:
-            flux_url = f"https://image.pollinations.ai/prompt/Professional studio product photography of {text}, luxury style, cinematic lighting, high resolution, 8k?nologo=true"
-            return JSONResponse({
-                "method": "sendMessage",
-                "chat_id": chat_id,
-                "text": f"✅ **CGI Artist natijasi:**\n\n🖼 [Rasmni yuklab olish]({flux_url})",
-                "parse_mode": "Markdown"
-            })
-        except Exception as e:
-            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": f"❌ CGI xatolik: {str(e)}"})
+        db.update_user_metadata(user_id, {"state": None})
+        flux_url = f"https://image.pollinations.ai/prompt/Professional studio product photography of {text}, luxury style, cinematic lighting, high resolution, 8k?nologo=true"
+        return JSONResponse({
+            "method": "sendMessage",
+            "chat_id": chat_id,
+            "text": f"✅ **CGI Artist natijasi:**\n\n🖼 [Rasmni ko'rish]({flux_url})",
+            "parse_mode": "Markdown"
+        })
 
     # 💎 Balans
     if text == "💎 Balans":
