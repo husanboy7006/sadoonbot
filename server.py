@@ -180,12 +180,13 @@ async def webhook_handler(request: Request):
         try:
             print(f"[*] AI Generating translation for: {text[:20]}...")
             
-            # Use the most stable Free Tier model
+            # Use the absolute most stable Free Tier model
             try:
                 ai_model = genai.GenerativeModel("models/gemini-1.5-flash")
                 response = ai_model.generate_content(f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {text}")
-            except:
-                ai_model = genai.GenerativeModel("models/gemini-2.0-flash")
+            except Exception as e:
+                # Last resort fallback to 1.0 pro
+                ai_model = genai.GenerativeModel("models/gemini-pro")
                 response = ai_model.generate_content(f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {text}")
             
             return JSONResponse({
