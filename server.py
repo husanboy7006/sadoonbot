@@ -179,7 +179,14 @@ async def webhook_handler(request: Request):
         set_local_state(user_id, None)
         try:
             print(f"[*] AI Generating translation for: {text[:20]}...")
-            response = model.generate_content(f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {text}")
+            # Fallback logic for models
+            try:
+                ai_model = genai.GenerativeModel("gemini-1.5-flash")
+                response = ai_model.generate_content(f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {text}")
+            except:
+                ai_model = genai.GenerativeModel("gemini-pro")
+                response = ai_model.generate_content(f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {text}")
+            
             return JSONResponse({
                 "method": "sendMessage",
                 "chat_id": chat_id,
