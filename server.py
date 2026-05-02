@@ -74,8 +74,8 @@ async def webhook_handler(token: str, request: Request):
     first_name = msg["from"].get("first_name", "")
     
     # Get current state from Database (reliable)
-    user_data = db.get_user(user_id)
-    current_state = user_data.get("metadata", {}).get("state") if user_data else None
+    metadata = db.get_user_metadata(user_id)
+    current_state = metadata.get("state")
     
     print(f"[*] Webhook: '{text}' from {user_id} (State: {current_state})")
 

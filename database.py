@@ -53,17 +53,28 @@ class Database:
             print(f"Error setting balance: {e}")
             return False
 
-    def add_user(self, user_id, username):
-        if not self.supabase: return
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        try:
-            self.supabase.table("users").upsert({
-                "user_id": user_id,
-                "username": username,
-                "join_date": now,
-                "balance": 1  # Yangi foydalanuvchiga 1 ta bepul sovg'a
-            }, on_conflict="user_id").execute()
         except: pass
+
+    def get_user_metadata(self, user_id):
+        if not self.supabase: return {}
+        try:
+            res = self.supabase.table("users").select("metadata").eq("user_id", str(user_id)).execute()
+            if res.data:
+                return res.data[0].get("metadata") or {}
+        except Exception as e:
+            print(f"Error getting metadata: {e}")
+        return {}
+
+    def update_user_metadata(self, user_id, metadata):
+        if not self.supabase: return False
+        try:
+            current = self.get_user_metadata(user_id)
+            current.update(metadata)
+            self.supabase.table("users").update({"metadata": current}).eq("user_id", str(user_id)).execute()
+            return True
+        except Exception as e:
+            print(f"Error updating metadata: {e}")
+            return False
 
     def get_all_users(self):
         if not self.supabase: return []
