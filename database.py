@@ -53,7 +53,21 @@ class Database:
             print(f"Error setting balance: {e}")
             return False
 
-        except: pass
+    def add_user(self, user_id, username):
+        if not self.supabase: return
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            res = self.supabase.table("users").select("user_id").eq("user_id", str(user_id)).execute()
+            if not res.data:
+                self.supabase.table("users").insert({
+                    "user_id": str(user_id),
+                    "username": username,
+                    "join_date": now,
+                    "balance": 1,
+                    "metadata": {}
+                }).execute()
+        except Exception as e:
+            print(f"Error adding user: {e}")
 
     def get_user_metadata(self, user_id):
         if not self.supabase: return {}
