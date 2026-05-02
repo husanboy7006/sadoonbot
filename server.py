@@ -38,6 +38,32 @@ from fastapi.responses import JSONResponse
 import uvicorn
 import mixer
 from database import Database
+import sqlite3
+
+# --- SQLITE LOCAL DATABASE (For States) ---
+def init_sqlite():
+    conn = sqlite3.connect("local_states.db")
+    c = conn.cursor()
+    c.execute("CREATE TABLE IF NOT EXISTS states (user_id TEXT PRIMARY KEY, state TEXT)")
+    conn.commit()
+    conn.close()
+
+def set_local_state(user_id, state):
+    conn = sqlite3.connect("local_states.db")
+    c = conn.cursor()
+    c.execute("INSERT OR REPLACE INTO states (user_id, state) VALUES (?, ?)", (str(user_id), state))
+    conn.commit()
+    conn.close()
+
+def get_local_state(user_id):
+    conn = sqlite3.connect("local_states.db")
+    c = conn.cursor()
+    c.execute("SELECT state FROM states WHERE user_id = ?", (str(user_id),))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+init_sqlite()
 
 logging.basicConfig(level=logging.INFO)
 app = FastAPI()
@@ -95,27 +121,26 @@ async def webhook_handler(request: Request):
     user_id = str(msg["from"]["id"])
     first_name = msg["from"].get("first_name", "Foydalanuvchi")
     
-    # State management
-    metadata = db.get_user_metadata(user_id)
-    current_state = metadata.get("state")
+    # State management (Local SQLite - 100% Reliable)
+    current_state = get_local_state(user_id)
     
     print(f"[*] Webhook: '{text}' from {user_id} (State: {current_state})")
 
     # /start
     if text == "/start":
-        db.update_user_metadata(user_id, {"state": None})
+        set_local_state(user_id, None)
         try: db.add_user(user_id, first_name)
         except: pass
         return JSONResponse({
             "method": "sendMessage",
             "chat_id": chat_id,
-            "text": f"Xush kelibsiz, {first_name}! 🚀\nSadoon AI tizimi to'liq qayta tiklandi va bazaga ulandi. Bot endi 100% ishlaydi.",
+            "text": f"Xush kelibsiz, {first_name}! 🚀\nSadoon AI tizimi lokal bazaga ulandi (DNS muammosi hal qilindi).",
             "reply_markup": MAIN_KEYBOARD
         })
 
     # Tilmoch AI activation
     if text == "🌐 Tilmoch AI":
-        db.update_user_metadata(user_id, {"state": "waiting_translate"})
+        set_local_state(user_id, "waiting_translate")
         return JSONResponse({
             "method": "sendMessage",
             "chat_id": chat_id,
@@ -124,11 +149,11 @@ async def webhook_handler(request: Request):
 
     # CGI activation
     if text == "🚀 CGI Product Artist (Premium v2)":
-        db.update_user_metadata(user_id, {"state": "waiting_cgi"})
+        set_local_state(user_id, "waiting_cgi")
         return JSONResponse({
             "method": "sendMessage",
             "chat_id": chat_id,
-            "text": "📸 Reklama qilmoqchi bo'lgan mahsulotingiz nomini yozing (masalan: Luxury perfume bottle)."
+            "text": "📸 Mahsulot nomini yozing."
         })
 
     # 💎 Balans
@@ -151,8 +176,9 @@ async def webhook_handler(request: Request):
 
     # Handling States (AI)
     if current_state == "waiting_translate" and text and not text.startswith("/"):
-        db.update_user_metadata(user_id, {"state": None})
+        set_local_state(user_id, None)
         try:
+            print(f"[*] AI Generating translation for: {text[:20]}...")
             response = model.generate_content(f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {text}")
             return JSONResponse({
                 "method": "sendMessage",
@@ -163,7 +189,7 @@ async def webhook_handler(request: Request):
             return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": f"❌ AI xatolik: {str(e)}"})
 
     if current_state == "waiting_cgi" and text and not text.startswith("/"):
-        db.update_user_metadata(user_id, {"state": None})
+        set_local_state(user_id, None)
         flux_url = f"https://image.pollinations.ai/prompt/Professional studio product photography of {text}, luxury style, cinematic lighting, high resolution, 8k?nologo=true"
         return JSONResponse({
             "method": "sendMessage",
