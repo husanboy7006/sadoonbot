@@ -55,7 +55,7 @@ import google.generativeai as genai
 GEMINI_KEY = os.getenv("GEMINI_KEY") or os.getenv("GEMINI_API_KEY")
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel("gemini-1.5-flash")
+model = genai.GenerativeModel("gemini-pro")
 
 # --- SIMPLE STATE MANAGEMENT (In-memory) ---
 user_states = {}
