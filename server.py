@@ -99,27 +99,43 @@ MAIN_KB = {
 }
 
 # --- 7. TELEGRAM HELPERS ---
+_TG_TIMEOUT = aiohttp.ClientTimeout(total=60, connect=15)
+
 async def tg(method, **kwargs):
-    async with aiohttp.ClientSession() as s:
-        async with s.post(f"{TG_API}/{method}", json=kwargs) as r:
-            return await r.json()
+    for attempt in range(3):
+        try:
+            async with aiohttp.ClientSession(timeout=_TG_TIMEOUT) as s:
+                async with s.post(f"{TG_API}/{method}", json=kwargs) as r:
+                    return await r.json()
+        except Exception as e:
+            print(f"[TG] {method} attempt {attempt+1} failed: {e}")
+            if attempt < 2:
+                await asyncio.sleep(3)
+    return {}
 
 async def tg_send(chat_id, text, **kwargs):
-    await tg("sendMessage", chat_id=chat_id, text=text, **kwargs)
+    await tg("sendMessage", chat_id=chat_id, text=text[:4000], **kwargs)
 
 async def tg_send_file(method, chat_id, path, field, **kwargs):
-    async with aiohttp.ClientSession() as s:
-        data = aiohttp.FormData()
-        data.add_field("chat_id", str(chat_id))
-        with open(path, "rb") as f:
-            data.add_field(field, f, filename=os.path.basename(path))
-        for k, v in kwargs.items():
-            data.add_field(k, str(v))
-        async with s.post(f"{TG_API}/{method}", data=data) as r:
-            return await r.json()
+    for attempt in range(3):
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=120, connect=15)) as s:
+                with open(path, "rb") as f:
+                    data = aiohttp.FormData()
+                    data.add_field("chat_id", str(chat_id))
+                    data.add_field(field, f, filename=os.path.basename(path))
+                    for k, v in kwargs.items():
+                        data.add_field(k, str(v))
+                    async with s.post(f"{TG_API}/{method}", data=data) as r:
+                        return await r.json()
+        except Exception as e:
+            print(f"[TG] {method} file attempt {attempt+1} failed: {e}")
+            if attempt < 2:
+                await asyncio.sleep(3)
+    return {}
 
 async def tg_download(file_id, save_path):
-    async with aiohttp.ClientSession() as s:
+    async with aiohttp.ClientSession(timeout=_TG_TIMEOUT) as s:
         async with s.get(f"{TG_API}/getFile?file_id={file_id}") as r:
             info = await r.json()
         fp = info["result"]["file_path"]

@@ -24,7 +24,9 @@ async def download_tiktok_tikwm(url: str):
         async with aiohttp.ClientSession() as session:
             async with session.post("https://www.tikwm.com/api/", data={'url': url}, timeout=15) as response:
                 r = await response.json()
-                if r.get('code') == 0: return "https://www.tikwm.com" + r['data']['play']
+                if r.get('code') == 0:
+                    play = r['data']['play']
+                    return play if play.startswith('http') else "https://www.tikwm.com" + play
     except Exception as e:
         print(f"[!] TikWM Error: {e}")
     return None
