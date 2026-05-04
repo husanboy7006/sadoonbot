@@ -43,6 +43,9 @@ import sqlite3
 def init_sqlite():
     with sqlite3.connect("local_states.db") as conn:
         conn.execute("CREATE TABLE IF NOT EXISTS states (user_id TEXT PRIMARY KEY, state TEXT, data TEXT)")
+        try:
+            conn.execute("ALTER TABLE states ADD COLUMN data TEXT")
+        except: pass
         conn.commit()
 
 def set_state(user_id, state, data=""):
@@ -127,8 +130,10 @@ async def tg_download(file_id, save_path):
 # --- 8. BACKGROUND TASKS ---
 async def bg_download(chat_id, url):
     output = f"output/v_{uuid.uuid4()}.mp4"
+    wait_id = None
     try:
         wait = await tg("sendMessage", chat_id=chat_id, text="⏳ Yuklanmoqda...")
+        wait_id = wait.get("result", {}).get("message_id")
         success = await mixer.download_video(url, output)
         if success:
             await tg_send_file("sendVideo", chat_id, output, "video")
@@ -137,15 +142,17 @@ async def bg_download(chat_id, url):
     except Exception as e:
         await tg_send(chat_id, f"❌ Xatolik: {e}")
     finally:
-        try:
-            await tg("deleteMessage", chat_id=chat_id, message_id=wait["result"]["message_id"])
-        except: pass
+        if wait_id:
+            try: await tg("deleteMessage", chat_id=chat_id, message_id=wait_id)
+            except: pass
         if os.path.exists(output): os.remove(output)
 
 async def bg_shazam(chat_id, file_id):
     temp = f"temp/shz_{uuid.uuid4()}.mp3"
+    wait_id = None
     try:
         wait = await tg("sendMessage", chat_id=chat_id, text="🔍 Musiqa aniqlanmoqda...")
+        wait_id = wait.get("result", {}).get("message_id")
         await tg_download(file_id, temp)
         info = await mixer.identify_music(temp)
         if info:
@@ -156,17 +163,19 @@ async def bg_shazam(chat_id, file_id):
     except Exception as e:
         await tg_send(chat_id, f"❌ Shazam xatosi: {e}")
     finally:
-        try:
-            await tg("deleteMessage", chat_id=chat_id, message_id=wait["result"]["message_id"])
-        except: pass
+        if wait_id:
+            try: await tg("deleteMessage", chat_id=chat_id, message_id=wait_id)
+            except: pass
         if os.path.exists(temp): os.remove(temp)
 
 async def bg_clip(chat_id, photo_id, audio_id):
     p = f"temp/p_{uuid.uuid4()}.jpg"
     a = f"temp/a_{uuid.uuid4()}.mp3"
     v = f"output/v_{uuid.uuid4()}.mp4"
+    wait_id = None
     try:
         wait = await tg("sendMessage", chat_id=chat_id, text="🎬 Klip tayyorlanmoqda...")
+        wait_id = wait.get("result", {}).get("message_id")
         await tg_download(photo_id, p)
         await tg_download(audio_id, a)
         if await mixer.mix_image_audio(p, a, v):
@@ -176,9 +185,9 @@ async def bg_clip(chat_id, photo_id, audio_id):
     except Exception as e:
         await tg_send(chat_id, f"❌ Xato: {e}")
     finally:
-        try:
-            await tg("deleteMessage", chat_id=chat_id, message_id=wait["result"]["message_id"])
-        except: pass
+        if wait_id:
+            try: await tg("deleteMessage", chat_id=chat_id, message_id=wait_id)
+            except: pass
         for f in [p, a, v]:
             if os.path.exists(f): os.remove(f)
 
