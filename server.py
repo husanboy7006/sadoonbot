@@ -3,7 +3,6 @@ import uuid
 import asyncio
 import logging
 import socket
-import urllib.parse
 import aiohttp
 from typing import Optional
 
@@ -90,9 +89,8 @@ if GEMINI_KEY:
 MAIN_KB = {
     "keyboard": [
         [{"text": "🎬 Klip Yaratish (V3) (🖼️ rasm + 🎵 musiqa)"}],
-        [{"text": "🚀 CGI Product Artist (Premium v2)"}],
         [{"text": "📥 Yuklab olish"}, {"text": "🔍 Shazam"}],
-        [{"text": "🌐 Tilmoch AI"}, {"text": "💎 Balans"}],
+        [{"text": "💎 Balans"}],
         [{"text": "✍️ Takliflar"}, {"text": "💰 To'ldirish"}]
     ],
     "resize_keyboard": True
@@ -278,22 +276,6 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
             "parse_mode": "Markdown"
         })
 
-    # 🌐 Tilmoch AI
-    if text == "🌐 Tilmoch AI":
-        set_state(user_id, "waiting_translate")
-        return JSONResponse({
-            "method": "sendMessage", "chat_id": chat_id,
-            "text": "✍️ Tarjima qilinadigan xabarni yuboring."
-        })
-
-    # 🚀 CGI
-    if text == "🚀 CGI Product Artist (Premium v2)":
-        set_state(user_id, "waiting_cgi")
-        return JSONResponse({
-            "method": "sendMessage", "chat_id": chat_id,
-            "text": "📸 Mahsulot nomini yozing."
-        })
-
     # 📥 Yuklab olish
     if text == "📥 Yuklab olish":
         set_state(user_id, "waiting_download")
@@ -327,51 +309,6 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         })
 
     # --- STATE HANDLERS ---
-
-    if state == "waiting_translate" and text:
-        set_state(user_id, None)
-        if not ai_client:
-            return JSONResponse({
-                "method": "sendMessage", "chat_id": chat_id,
-                "text": "❌ AI sozlanmagan (GEMINI_KEY yo'q)."
-            })
-        try:
-            loop = asyncio.get_event_loop()
-            response = await asyncio.wait_for(
-                loop.run_in_executor(
-                    None,
-                    lambda: ai_client.models.generate_content(
-                        model="gemini-1.5-flash",
-                        contents=f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {text}"
-                    )
-                ), timeout=30
-            )
-            return JSONResponse({
-                "method": "sendMessage", "chat_id": chat_id,
-                "text": response.text[:4000]
-            })
-        except asyncio.TimeoutError:
-            return JSONResponse({
-                "method": "sendMessage", "chat_id": chat_id,
-                "text": "⏰ AI javob bermadi. Qayta urinib ko'ring."
-            })
-        except Exception as e:
-            return JSONResponse({
-                "method": "sendMessage", "chat_id": chat_id,
-                "text": f"❌ AI xatolik: {str(e)[:300]}"
-            })
-
-    if state == "waiting_cgi" and text:
-        set_state(user_id, None)
-        safe_text = urllib.parse.quote(
-            f"Professional studio product photography of {text}, luxury style, cinematic lighting, high resolution, 8k"
-        )
-        flux_url = f"https://image.pollinations.ai/prompt/{safe_text}?nologo=true"
-        return JSONResponse({
-            "method": "sendMessage", "chat_id": chat_id,
-            "text": f"✅ CGI Artist natijasi:\n\n🖼 [Rasmni ko'rish]({flux_url})\n\n_(Rasm bir necha soniyada tayyor bo'ladi)_",
-            "parse_mode": "Markdown"
-        })
 
     if state == "waiting_download" and text:
         import re
