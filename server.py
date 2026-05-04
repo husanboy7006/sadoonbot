@@ -307,7 +307,10 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
     if state == "waiting_translate" and text:
         set_state(user_id, None)
         background_tasks.add_task(bg_translate, chat_id, text)
-        return JSONResponse({"ok": True})
+        return JSONResponse({
+            "method": "sendMessage", "chat_id": chat_id,
+            "text": "⏳ Tarjima qilinmoqda..."
+        })
 
     if state == "waiting_cgi" and text:
         set_state(user_id, None)
@@ -328,7 +331,10 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
             set_state(user_id, None)
             url = urls[0].strip('.,()!?')
             background_tasks.add_task(bg_download, chat_id, url)
-            return JSONResponse({"ok": True})
+            return JSONResponse({
+                "method": "sendMessage", "chat_id": chat_id,
+                "text": "⏳ Yuklanmoqda... (30-60 soniya kutib turing)"
+            })
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
             "text": "❌ Havola topilmadi. Iltimos, to'g'ri URL yuboring."
@@ -375,7 +381,17 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
 # --- 10. API ENDPOINTS ---
 @app.get("/")
 async def read_root():
-    return {"status": "Sadoon API + Bot (A-Z Healthy)", "gemini": bool(GEMINI_KEY)}
+    return {
+        "status": "Sadoon API + Bot (A-Z Healthy)",
+        "gemini": bool(GEMINI_KEY),
+        "bot_token": bool(BOT_TOKEN),
+        "tg_api": TG_API[:40] + "..." if BOT_TOKEN else "NOT SET"
+    }
+
+@app.get("/debug/state/{user_id}")
+async def debug_state(user_id: str):
+    state, data = get_state(user_id)
+    return {"user_id": user_id, "state": state, "data": data}
 
 @app.post("/api/download-video")
 async def api_download_video(request: Request, url: Optional[str] = Form(None),
