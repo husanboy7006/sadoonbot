@@ -11,7 +11,8 @@ from aiogram.types import Message, FSInputFile, BufferedInputFile
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-import google.generativeai as genai
+from google import genai as google_genai
+from google.genai import types as genai_types
 from database import Database
 import mixer
 
@@ -29,8 +30,9 @@ if not TOKEN:
     print("❌ ERROR: Telegram BOT_TOKEN topilmadi!")
     exit(1)
 
+gemini_client = None
 if GEMINI_KEY:
-    genai.configure(api_key=GEMINI_KEY)
+    gemini_client = google_genai.Client(api_key=GEMINI_KEY)
 
 db = Database()
 bot = Bot(token=TOKEN)
@@ -110,13 +112,17 @@ async def handle_cgi_final(message: Message, state: FSMContext):
             async with s.get(file_url) as r:
                 img_data = await r.read()
         try:
-            model_cgi = genai.GenerativeModel("gemini-1.5-flash")
-            resp = await asyncio.wait_for(
-                model_cgi.generate_content_async([f"{CGI_PROMPT}\nVibe:{vibe} Format:{plat}", {"mime_type":"image/jpeg","data":img_data}]), timeout=90)
-            if resp.candidates:
-                for part in resp.candidates[0].content.parts:
-                    if hasattr(part, 'inline_data'):
-                        await message.answer_photo(photo=BufferedInputFile(part.inline_data.data, filename="cgi.jpg"), caption="💎 Premium CGI")
+            if gemini_client:
+                resp = await asyncio.wait_for(
+                    gemini_client.aio.models.generate_content(
+                        model="gemini-1.5-flash",
+                        contents=[f"{CGI_PROMPT}\nVibe:{vibe} Format:{plat}",
+                                  genai_types.Part.from_bytes(data=img_data, mime_type="image/jpeg")]
+                    ), timeout=90)
+                if resp.candidates:
+                    for part in resp.candidates[0].content.parts:
+                        if hasattr(part, 'inline_data'):
+                            await message.answer_photo(photo=BufferedInputFile(part.inline_data.data, filename="cgi.jpg"), caption="💎 Premium CGI")
                         if message.from_user.id != ADMIN_ID: db.update_balance(message.from_user.id, -1)
                         db.log_stats(message.from_user.id, "cgi")
                         return
@@ -143,8 +149,12 @@ async def trans_start(message: Message, state: FSMContext):
 @dp.message(MixState.waiting_translate, F.text)
 async def handle_translate(message: Message, state: FSMContext):
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        res = await model.generate_content_async(f"Tarjima qiling: {message.text}")
+        if not gemini_client:
+            return await message.answer("❌ AI sozlanmagan.")
+        res = await gemini_client.aio.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=f"Tarjima qiling: {message.text}"
+        )
         await message.answer(res.text)
     except Exception as e:
         await message.answer(f"❌ Xato: {e}")

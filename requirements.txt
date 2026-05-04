@@ -8,5 +8,5 @@ fastapi
 python-multipart
 aiogram
 supabase
-google-generativeai
+google-genai
 instaloader

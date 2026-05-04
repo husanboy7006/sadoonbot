@@ -80,12 +80,11 @@ TG_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 db = Database()
 
 # --- 5. GEMINI ---
-import google.generativeai as genai
+from google import genai as google_genai
 GEMINI_KEY = os.getenv("GEMINI_KEY") or os.getenv("GEMINI_API_KEY")
-ai_model = None
+ai_client = None
 if GEMINI_KEY:
-    genai.configure(api_key=GEMINI_KEY)
-    ai_model = genai.GenerativeModel("gemini-1.5-flash")
+    ai_client = google_genai.Client(api_key=GEMINI_KEY)
 
 # --- 6. KEYBOARD ---
 MAIN_KB = {
@@ -195,11 +194,12 @@ async def bg_clip(chat_id, photo_id, audio_id):
 
 async def bg_translate(chat_id, text):
     try:
-        if not ai_model:
+        if not ai_client:
             await tg_send(chat_id, "❌ AI sozlanmagan (GEMINI_KEY yo'q).")
             return
-        response = ai_model.generate_content(
-            f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {text}"
+        response = ai_client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {text}"
         )
         await tg_send(chat_id, response.text)
     except Exception as e:
@@ -385,7 +385,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
 async def read_root():
     return {
         "status": "Sadoon API + Bot (A-Z Healthy)",
-        "gemini": bool(GEMINI_KEY),
+        "gemini": bool(ai_client),
         "bot_token": bool(BOT_TOKEN),
         "tg_api": TG_API[:40] + "..." if BOT_TOKEN else "NOT SET"
     }
