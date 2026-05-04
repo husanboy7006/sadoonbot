@@ -144,6 +144,12 @@ async def tg_download(file_id, save_path):
                 f.write(await r.read())
 
 # --- 8. BACKGROUND TASKS ---
+async def _cleanup_file(path, delay=60):
+    await asyncio.sleep(delay)
+    try:
+        if os.path.exists(path): os.remove(path)
+    except: pass
+
 async def bg_download(chat_id, url):
     output = f"output/v_{uuid.uuid4()}.mp4"
     try:
@@ -348,11 +354,38 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         if urls:
             set_state(user_id, None)
             url = urls[0].strip('.,()!?')
-            background_tasks.add_task(bg_download, chat_id, url)
-            return JSONResponse({
-                "method": "sendMessage", "chat_id": chat_id,
-                "text": "⏳ Yuklanmoqda... (30-60 soniya kutib turing)"
-            })
+            filename = f"v_{uuid.uuid4()}.mp4"
+            output = f"output/{filename}"
+            try:
+                success = await asyncio.wait_for(
+                    mixer.download_video(url, output), timeout=55
+                )
+                if success:
+                    file_url = f"{BASE_URL}/output/{filename}"
+                    background_tasks.add_task(_cleanup_file, output, 120)
+                    return JSONResponse({
+                        "method": "sendVideo",
+                        "chat_id": chat_id,
+                        "video": file_url,
+                        "supports_streaming": True
+                    })
+                if os.path.exists(output): os.remove(output)
+                return JSONResponse({
+                    "method": "sendMessage", "chat_id": chat_id,
+                    "text": "❌ Yuklab bo'lmadi. TikTok yoki YouTube havolasini sinab ko'ring."
+                })
+            except asyncio.TimeoutError:
+                if os.path.exists(output): os.remove(output)
+                return JSONResponse({
+                    "method": "sendMessage", "chat_id": chat_id,
+                    "text": "⏰ 55 soniya ichida yuklanmadi. Video juda katta yoki sayt bloklanган."
+                })
+            except Exception as e:
+                if os.path.exists(output): os.remove(output)
+                return JSONResponse({
+                    "method": "sendMessage", "chat_id": chat_id,
+                    "text": f"❌ Xatolik: {str(e)[:200]}"
+                })
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
             "text": "❌ Havola topilmadi. Iltimos, to'g'ri URL yuboring."
