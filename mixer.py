@@ -60,6 +60,42 @@ async def download_audio(url: str, output_path: str):
     print("[*] Try yt-dlp fallback...")
     return await yt_dlp_download(url, output_path, is_audio=True)
 
+async def download_instagram(url: str, output_path: str):
+    print(f"[*] Instagram (instaloader): {url[:50]}")
+    try:
+        import instaloader, re, tempfile
+        import shutil as _shutil
+
+        m = re.search(r'/(reel|p|tv)/([A-Za-z0-9_-]+)', url)
+        if not m:
+            return False
+        shortcode = m.group(2)
+
+        def _run():
+            L = instaloader.Instaloader(
+                download_pictures=False, download_videos=True,
+                download_video_thumbnails=False, download_geotags=False,
+                download_comments=False, save_metadata=False,
+                compress_json=False, quiet=True
+            )
+            with tempfile.TemporaryDirectory() as tmpdir:
+                post = instaloader.Post.from_shortcode(L.context, shortcode)
+                L.download_post(post, target=tmpdir)
+                for root, _, files in os.walk(tmpdir):
+                    for f in files:
+                        if f.endswith(".mp4"):
+                            _shutil.move(os.path.join(root, f), output_path)
+                            return True
+            return False
+
+        loop = asyncio.get_event_loop()
+        return await asyncio.wait_for(
+            loop.run_in_executor(_executor, _run), timeout=60
+        )
+    except Exception as e:
+        print(f"[!] Instaloader error: {e}")
+    return False
+
 async def download_video(url: str, output_path: str):
     print(f"[*] Video yuklash: {url[:30]}...")
 
@@ -67,8 +103,13 @@ async def download_video(url: str, output_path: str):
     if "tiktok.com" in url:
         v_url = await download_tiktok_tikwm(url)
         if v_url and await download_directly(v_url, output_path): return True
-        
-    # 2. Cobalt API Fallbacks
+
+    # 2. Instagram uchun instaloader
+    if "instagram.com" in url:
+        if await download_instagram(url, output_path): return True
+        print("[!] Instaloader failed, trying cobalt...")
+
+    # 3. Cobalt API Fallbacks
     cobalt_mirrors = [
         "https://api.cobalt.tools/api/json",
         "https://cobalt-api.kwiateusz.xyz/api/json",
@@ -78,11 +119,11 @@ async def download_video(url: str, output_path: str):
     for mirror in cobalt_mirrors:
         print(f"[*] Try Cobalt Mirror: {mirror}")
         v_url = await get_cobalt_url_custom(url, mirror, "video")
-        if v_url and await download_directly(v_url, output_path): 
+        if v_url and await download_directly(v_url, output_path):
             print("[+] Cobalt success!")
             return True
 
-    # 3. Yt-dlp Fallback (Cookie bilan)
+    # 4. Yt-dlp Fallback
     print("[*] Try yt-dlp fallback with cookies...")
     return await yt_dlp_download(url, output_path, is_audio=False)
 

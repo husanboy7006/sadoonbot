@@ -1,5 +1,6 @@
 import os
 import uuid
+import asyncio
 import logging
 import socket
 import urllib.parse
@@ -132,12 +133,16 @@ async def bg_download(chat_id, url):
     output = f"output/v_{uuid.uuid4()}.mp4"
     try:
         print(f"[BG] Downloading: {url[:50]}")
-        success = await mixer.download_video(url, output)
+        success = await asyncio.wait_for(
+            mixer.download_video(url, output), timeout=90
+        )
         print(f"[BG] Download result: {success}")
         if success:
             await tg_send_file("sendVideo", chat_id, output, "video")
         else:
-            await tg_send(chat_id, "❌ Yuklab bo'lmadi. Havola noto'g'ri yoki qo'llab-quvvatlanmaydi.")
+            await tg_send(chat_id, "❌ Yuklab bo'lmadi. Boshqa havola yoki TikTok/YouTube sinab ko'ring.")
+    except asyncio.TimeoutError:
+        await tg_send(chat_id, "⏰ Vaqt tugadi (90s). Havola juda katta yoki bloklanган.")
     except Exception as e:
         print(f"[BG] Download error: {e}")
         await tg_send(chat_id, f"❌ Xatolik: {e}")

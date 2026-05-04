@@ -9,3 +9,4 @@ python-multipart
 aiogram
 supabase
 google-generativeai
+instaloader
