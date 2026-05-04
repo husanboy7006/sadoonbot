@@ -1,9 +1,8 @@
 import os
 import uuid
-import json
 import logging
 import socket
-import asyncio
+import urllib.parse
 from typing import Optional
 
 # --- 1. STRONG DNS PATCH (Hugging Face firewall'ni chetlab o'tish uchun) ---
@@ -49,18 +48,13 @@ def init_sqlite():
     conn.close()
 
 def set_local_state(user_id, state):
-    conn = sqlite3.connect("local_states.db")
-    c = conn.cursor()
-    c.execute("INSERT OR REPLACE INTO states (user_id, state) VALUES (?, ?)", (str(user_id), state))
-    conn.commit()
-    conn.close()
+    with sqlite3.connect("local_states.db") as conn:
+        conn.execute("INSERT OR REPLACE INTO states (user_id, state) VALUES (?, ?)", (str(user_id), state))
+        conn.commit()
 
 def get_local_state(user_id):
-    conn = sqlite3.connect("local_states.db")
-    c = conn.cursor()
-    c.execute("SELECT state FROM states WHERE user_id = ?", (str(user_id),))
-    row = c.fetchone()
-    conn.close()
+    with sqlite3.connect("local_states.db") as conn:
+        row = conn.execute("SELECT state FROM states WHERE user_id = ?", (str(user_id),)).fetchone()
     return row[0] if row else None
 
 init_sqlite()
@@ -88,9 +82,10 @@ db = Database()
 # --- 4. GEMINI INITIALIZATION ---
 import google.generativeai as genai
 GEMINI_KEY = os.getenv("GEMINI_KEY") or os.getenv("GEMINI_API_KEY")
+model = None
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel("gemini-pro")
+    model = genai.GenerativeModel("gemini-1.5-flash")
 
 # --- 5. KEYBOARD ---
 MAIN_KEYBOARD = {
@@ -177,18 +172,11 @@ async def webhook_handler(request: Request):
     # Handling States (AI)
     if current_state == "waiting_translate" and text and not text.startswith("/"):
         set_local_state(user_id, None)
+        if not model:
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "❌ AI sozlanmagan (GEMINI_KEY yo'q)."})
         try:
             print(f"[*] AI Generating translation for: {text[:20]}...")
-            
-            # Use the absolute most stable Free Tier model
-            try:
-                ai_model = genai.GenerativeModel("models/gemini-1.5-flash")
-                response = ai_model.generate_content(f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {text}")
-            except Exception as e:
-                # Last resort fallback to 1.0 pro
-                ai_model = genai.GenerativeModel("models/gemini-pro")
-                response = ai_model.generate_content(f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {text}")
-            
+            response = model.generate_content(f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {text}")
             return JSONResponse({
                 "method": "sendMessage",
                 "chat_id": chat_id,
@@ -199,7 +187,8 @@ async def webhook_handler(request: Request):
 
     if current_state == "waiting_cgi" and text and not text.startswith("/"):
         set_local_state(user_id, None)
-        flux_url = f"https://image.pollinations.ai/prompt/Professional studio product photography of {text}, luxury style, cinematic lighting, high resolution, 8k?nologo=true"
+        safe_text = urllib.parse.quote(f"Professional studio product photography of {text}, luxury style, cinematic lighting, high resolution, 8k")
+        flux_url = f"https://image.pollinations.ai/prompt/{safe_text}?nologo=true"
         return JSONResponse({
             "method": "sendMessage",
             "chat_id": chat_id,

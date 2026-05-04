@@ -2,13 +2,12 @@ import logging
 import asyncio
 import os
 import aiohttp
-import socket
 import uuid
 import urllib.parse
 import re
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, FSInputFile, BufferedInputFile, Update
+from aiogram.types import Message, FSInputFile, BufferedInputFile
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -22,7 +21,7 @@ logging.basicConfig(level=logging.INFO)
 # --- CONFIG ---
 TOKEN = os.getenv("HF_TOKEN") or os.getenv("BOT_TOKEN") or os.getenv("API_TOKEN")
 GEMINI_KEY = os.getenv("GEMINI_KEY") or os.getenv("GEMINI_API_KEY")
-ADMIN_ID = 5614682028
+ADMIN_ID = int(os.getenv("ADMIN_ID", "5614682028"))
 WEBHOOK_PATH = f"/webhook/{TOKEN}"
 BASE_URL = os.getenv("BASE_URL", "https://husanjon007-sadoon-api.hf.space")
 
@@ -145,7 +144,7 @@ async def trans_start(message: Message, state: FSMContext):
 async def handle_translate(message: Message, state: FSMContext):
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
-        res = model.generate_content(f"Tarjima qiling: {message.text}")
+        res = await model.generate_content_async(f"Tarjima qiling: {message.text}")
         await message.answer(res.text)
     except Exception as e:
         await message.answer(f"❌ Xato: {e}")
@@ -255,3 +254,10 @@ async def echo(message: Message):
 def extract_url(text: str):
     urls = re.findall(r'http[s]?://[^\s]+', text)
     return urls[0].strip('.,()!?*') if urls else None
+
+async def main():
+    await bot.delete_webhook(drop_pending_updates=True)
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())

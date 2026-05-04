@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from supabase import create_client, Client
+from supabase import create_client
 
 # --- SOZLAMALAR ---
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -34,11 +34,14 @@ class Database:
     def update_balance(self, user_id, amount):
         if not self.supabase: return False
         try:
-            current = self.get_balance(user_id)
+            res = self.supabase.table("users").select("balance").eq("user_id", str(user_id)).execute()
+            if not res.data:
+                print(f"update_balance: user {user_id} not found")
+                return False
+            current = res.data[0].get("balance", 0)
             new_balance = current + amount
             if new_balance < 0: return False
-            
-            self.supabase.table("users").update({"balance": new_balance}).eq("user_id", user_id).execute()
+            self.supabase.table("users").update({"balance": new_balance}).eq("user_id", str(user_id)).execute()
             return True
         except Exception as e:
             print(f"Error updating balance: {e}")

@@ -1,16 +1,8 @@
 import os
-import re
-import requests
-import sys
 import subprocess
 import shutil
 import asyncio
 import aiohttp
-import json
-import socket
-import urllib.request
-import ssl
-import time
 from pydub import AudioSegment
 from shazamio import Shazam
 
@@ -231,8 +223,6 @@ async def compress_video(input_path: str, output_path: str):
             process.kill()
             return False
     except Exception as e:
-        print(f"[!] Compression error: {e}")
-        return False
         print(f"[!] Compression error: {e}")
         return False
 
