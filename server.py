@@ -85,7 +85,7 @@ GEMINI_KEY = os.getenv("GEMINI_KEY") or os.getenv("GEMINI_API_KEY")
 model = None
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    model = genai.GenerativeModel("gemini-1.5-flash")
 
 # --- 5. KEYBOARD ---
 MAIN_KEYBOARD = {
