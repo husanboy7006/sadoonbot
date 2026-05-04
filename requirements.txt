@@ -8,4 +8,4 @@ fastapi
 python-multipart
 aiogram
 supabase
-google-generativeai
+google-generativeai==0.8.3

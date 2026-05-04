@@ -110,7 +110,7 @@ async def handle_cgi_final(message: Message, state: FSMContext):
             async with s.get(file_url) as r:
                 img_data = await r.read()
         try:
-            model_cgi = genai.GenerativeModel("gemini-1.5-flash")
+            model_cgi = genai.GenerativeModel("gemini-2.0-flash")
             resp = await asyncio.wait_for(
                 model_cgi.generate_content_async([f"{CGI_PROMPT}\nVibe:{vibe} Format:{plat}", {"mime_type":"image/jpeg","data":img_data}]), timeout=90)
             if resp.candidates:
@@ -143,7 +143,7 @@ async def trans_start(message: Message, state: FSMContext):
 @dp.message(MixState.waiting_translate, F.text)
 async def handle_translate(message: Message, state: FSMContext):
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-2.0-flash")
         res = await model.generate_content_async(f"Tarjima qiling: {message.text}")
         await message.answer(res.text)
     except Exception as e:
