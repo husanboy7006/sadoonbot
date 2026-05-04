@@ -330,11 +330,36 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
 
     if state == "waiting_translate" and text:
         set_state(user_id, None)
-        background_tasks.add_task(bg_translate, chat_id, text)
-        return JSONResponse({
-            "method": "sendMessage", "chat_id": chat_id,
-            "text": "⏳ Tarjima qilinmoqda..."
-        })
+        if not ai_client:
+            return JSONResponse({
+                "method": "sendMessage", "chat_id": chat_id,
+                "text": "❌ AI sozlanmagan (GEMINI_KEY yo'q)."
+            })
+        try:
+            loop = asyncio.get_event_loop()
+            response = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    lambda: ai_client.models.generate_content(
+                        model="gemini-1.5-flash",
+                        contents=f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {text}"
+                    )
+                ), timeout=30
+            )
+            return JSONResponse({
+                "method": "sendMessage", "chat_id": chat_id,
+                "text": response.text[:4000]
+            })
+        except asyncio.TimeoutError:
+            return JSONResponse({
+                "method": "sendMessage", "chat_id": chat_id,
+                "text": "⏰ AI javob bermadi. Qayta urinib ko'ring."
+            })
+        except Exception as e:
+            return JSONResponse({
+                "method": "sendMessage", "chat_id": chat_id,
+                "text": f"❌ AI xatolik: {str(e)[:300]}"
+            })
 
     if state == "waiting_cgi" and text:
         set_state(user_id, None)
