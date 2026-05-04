@@ -130,21 +130,18 @@ async def tg_download(file_id, save_path):
 # --- 8. BACKGROUND TASKS ---
 async def bg_download(chat_id, url):
     output = f"output/v_{uuid.uuid4()}.mp4"
-    wait_id = None
     try:
-        wait = await tg("sendMessage", chat_id=chat_id, text="⏳ Yuklanmoqda...")
-        wait_id = wait.get("result", {}).get("message_id")
+        print(f"[BG] Downloading: {url[:50]}")
         success = await mixer.download_video(url, output)
+        print(f"[BG] Download result: {success}")
         if success:
             await tg_send_file("sendVideo", chat_id, output, "video")
         else:
             await tg_send(chat_id, "❌ Yuklab bo'lmadi. Havola noto'g'ri yoki qo'llab-quvvatlanmaydi.")
     except Exception as e:
+        print(f"[BG] Download error: {e}")
         await tg_send(chat_id, f"❌ Xatolik: {e}")
     finally:
-        if wait_id:
-            try: await tg("deleteMessage", chat_id=chat_id, message_id=wait_id)
-            except: pass
         if os.path.exists(output): os.remove(output)
 
 async def bg_shazam(chat_id, file_id):

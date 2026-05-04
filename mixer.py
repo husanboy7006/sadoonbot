@@ -3,8 +3,11 @@ import subprocess
 import shutil
 import asyncio
 import aiohttp
+from concurrent.futures import ThreadPoolExecutor
 from pydub import AudioSegment
 from shazamio import Shazam
+
+_executor = ThreadPoolExecutor(max_workers=2)
 
 # FFmpeg yo'lini aniqlash
 ffmpeg_binary = "ffmpeg"
@@ -135,8 +138,12 @@ async def yt_dlp_download(url, output_path, is_audio=False):
         if is_audio: 
             ydl_opts['postprocessors'] = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
             
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
+        def _run():
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(_executor, _run)
             
         # Natijani tekshirish
         if is_audio:
