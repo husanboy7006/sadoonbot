@@ -98,6 +98,9 @@ GEMINI_KEY = os.getenv("GEMINI_KEY") or os.getenv("GEMINI_API_KEY")
 ai_client = None
 if GEMINI_KEY:
     ai_client = google_genai.Client(api_key=GEMINI_KEY)
+    print(f"[*] Gemini key loaded: ...{GEMINI_KEY[-6:]}")
+else:
+    print("[!] GEMINI_KEY topilmadi!")
 
 # --- 6. KEYBOARD ---
 MAIN_KB = {
