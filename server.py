@@ -258,6 +258,60 @@ async def bg_clip_from_url(chat_id, photo_id, url):
         for f in [p, a, v]:
             if os.path.exists(f): os.remove(f)
 
+CGI_PROMPT = """You are a world-class CGI Product Visualization Director and advertising creative director.
+TASK: Take this product and create a HIGH-END, cinematic advertising image.
+- Professional studio lighting with dramatic shadows
+- Luxury background matching the vibe
+- Photorealistic render quality
+- No text overlays
+Vibe: {vibe}
+Platform format: {plat}"""
+
+async def bg_cgi(chat_id, photo_id, vibe, plat):
+    p = f"temp/p_{uuid.uuid4()}.jpg"
+    wait_id = None
+    try:
+        wait = await tg("sendMessage", chat_id=chat_id, text="⏳ CGI Artist ishlamoqda (20-30 soniya)...")
+        wait_id = wait.get("result", {}).get("message_id")
+        await tg_download(photo_id, p)
+        if not ai_client:
+            await tg_send(chat_id, "❌ GEMINI_KEY sozlanmagan.")
+            return
+        with open(p, "rb") as f:
+            img_data = f.read()
+        from google.genai import types as genai_types
+        prompt = CGI_PROMPT.format(vibe=vibe, plat=plat)
+        response = await asyncio.wait_for(
+            ai_client.aio.models.generate_content(
+                model="gemini-2.0-flash-exp",
+                contents=[
+                    genai_types.Part.from_bytes(data=img_data, mime_type="image/jpeg"),
+                    prompt
+                ],
+                config=genai_types.GenerateContentConfig(
+                    response_modalities=["IMAGE", "TEXT"]
+                )
+            ), timeout=60
+        )
+        for part in response.candidates[0].content.parts:
+            if hasattr(part, 'inline_data') and part.inline_data:
+                out = f"output/cgi_{uuid.uuid4()}.jpg"
+                with open(out, "wb") as f:
+                    f.write(part.inline_data.data)
+                await tg_send_file("sendPhoto", chat_id, out, "photo", caption=f"💎 CGI: {vibe} / {plat}")
+                if os.path.exists(out): os.remove(out)
+                return
+        await tg_send(chat_id, "❌ Gemini rasm yarata olmadi. Keyinroq sinab ko'ring.")
+    except asyncio.TimeoutError:
+        await tg_send(chat_id, "⏰ Vaqt tugadi. Keyinroq sinab ko'ring.")
+    except Exception as e:
+        await tg_send(chat_id, f"❌ CGI xatolik: {str(e)[:200]}")
+    finally:
+        if wait_id:
+            try: await tg("deleteMessage", chat_id=chat_id, message_id=wait_id)
+            except: pass
+        if os.path.exists(p): os.remove(p)
+
 async def bg_translate(chat_id, text):
     try:
         if not ai_client:
@@ -438,14 +492,8 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         plat = plat_map.get(choices[1], "Instagram")
         photo_id = state_data
         set_state(user_id, None)
-        import urllib.parse
-        f_prompt = f"product photography {vibe} style {plat}"
-        flux_url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(f_prompt)}?nologo=true"
-        return JSONResponse({
-            "method": "sendPhoto", "chat_id": chat_id,
-            "photo": flux_url,
-            "caption": f"✅ CGI: {vibe} / {plat}"
-        })
+        background_tasks.add_task(bg_cgi, chat_id, photo_id, vibe, plat)
+        return JSONResponse({"ok": True})
 
     if state == "waiting_shazam" and (audio or video):
         file_id = audio["file_id"] if audio else video["file_id"]
