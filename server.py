@@ -321,7 +321,7 @@ async def bg_translate(chat_id, text):
             await tg_send(chat_id, "❌ AI sozlanmagan (GEMINI_KEY yo'q).")
             return
         response = await ai_client.aio.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.0-flash-lite",
             contents=f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {text}"
         )
         await tg_send(chat_id, response.text)
@@ -479,7 +479,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         try:
             response = await asyncio.wait_for(
                 ai_client.aio.models.generate_content(
-                    model="gemini-2.0-flash",
+                    model="gemini-2.0-flash-lite",
                     contents=f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {text}"
                 ), timeout=30
             )
