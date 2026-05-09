@@ -1,6 +1,5 @@
 requests
 pydub
-shazamio
 yt-dlp
 fastapi
 uvicorn

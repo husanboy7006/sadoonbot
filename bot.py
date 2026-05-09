@@ -190,31 +190,34 @@ async def handle_download(message: Message, state: FSMContext):
 
 @dp.message(F.text == "🔍 Shazam")
 async def shazam_start(message: Message, state: FSMContext):
-    await message.answer("🎧 Audio/Video yuboring.")
-    await state.set_state(MixState.waiting_shazam)
+    await message.answer("❌ Shazam vaqtincha ishlamaydi (paket muammosi).")
+    # await message.answer("🎧 Audio/Video yuboring.")
+    # await state.set_state(MixState.waiting_shazam)
 
 @dp.message(MixState.waiting_shazam, F.audio | F.voice | F.video)
 async def handle_shazam(message: Message, state: FSMContext):
-    wait_msg = await message.answer("🔍 Qidirilmoqda...")
-    temp = f"temp/shz_{uuid.uuid4()}.mp3"
-    try:
-        fid = message.audio.file_id if message.audio else (message.voice.file_id if message.voice else message.video.file_id)
-        file = await bot.get_file(fid)
-        await bot.download_file(file.file_path, temp)
-        info = await mixer.identify_music(temp)
-        if info:
-            title = info.get('title', 'Noma\'lum')
-            subtitle = info.get('subtitle', 'Noma\'lum')
-            text = f"✅ Topildi!\n🎵 {title}\n👤 {subtitle}"
-            await message.answer(text)
-        else:
-            await message.answer("❌ Topilmadi.")
-    except Exception as e:
-        await message.answer(f"❌ Shazam hatosi: {e}")
-    finally:
-        await wait_msg.delete()
-        if os.path.exists(temp): os.remove(temp)
-        await state.clear()
+    await message.answer("❌ Shazam vaqtincha ishlamaydi.")
+    await state.clear()
+    # wait_msg = await message.answer("🔍 Qidirilmoqda...")
+    # temp = f"temp/shz_{uuid.uuid4()}.mp3"
+    # try:
+    #     fid = message.audio.file_id if message.audio else (message.voice.file_id if message.voice else message.video.file_id)
+    #     file = await bot.get_file(fid)
+    #     await bot.download_file(file.file_path, temp)
+    #     info = await mixer.identify_music(temp)
+    #     if info:
+    #         title = info.get('title', 'Noma\'lum')
+    #         subtitle = info.get('subtitle', 'Noma\'lum')
+    #         text = f"✅ Topildi!\n🎵 {title}\n👤 {subtitle}"
+    #         await message.answer(text)
+    #     else:
+    #         await message.answer("❌ Topilmadi.")
+    # except Exception as e:
+    #     await message.answer(f"❌ Shazam hatosi: {e}")
+    # finally:
+    #     await wait_msg.delete()
+    #     if os.path.exists(temp): os.remove(temp)
+    #     await state.clear()
 
 @dp.message(F.text == "🎬 Klip Yaratish (V3) (🖼️ rasm + 🎵 musiqa)")
 async def clip_start(message: Message, state: FSMContext):

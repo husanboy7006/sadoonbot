@@ -183,25 +183,26 @@ async def bg_download(chat_id, url):
         if os.path.exists(output): os.remove(output)
 
 async def bg_shazam(chat_id, file_id):
-    temp = f"temp/shz_{uuid.uuid4()}.mp3"
-    wait_id = None
-    try:
-        wait = await tg("sendMessage", chat_id=chat_id, text="🔍 Musiqa aniqlanmoqda...")
-        wait_id = wait.get("result", {}).get("message_id")
-        await tg_download(file_id, temp)
-        info = await mixer.identify_music(temp)
-        if info:
-            text = f"✅ Topildi!\n🎵 {info['title']}\n👤 {info['subtitle']}"
-        else:
-            text = "❌ Musiqa topilmadi."
-        await tg_send(chat_id, text)
-    except Exception as e:
-        await tg_send(chat_id, f"❌ Shazam xatosi: {e}")
-    finally:
-        if wait_id:
-            try: await tg("deleteMessage", chat_id=chat_id, message_id=wait_id)
-            except: pass
-        if os.path.exists(temp): os.remove(temp)
+    await tg_send(chat_id, "❌ Shazam vaqtincha ishlamaydi.")
+    # temp = f"temp/shz_{uuid.uuid4()}.mp3"
+    # wait_id = None
+    # try:
+    #     wait = await tg("sendMessage", chat_id=chat_id, text="🔍 Musiqa aniqlanmoqda...")
+    #     wait_id = wait.get("result", {}).get("message_id")
+    #     await tg_download(file_id, temp)
+    #     info = await mixer.identify_music(temp)
+    #     if info:
+    #         text = f"✅ Topildi!\n🎵 {info['title']}\n👤 {info['subtitle']}"
+    #     else:
+    #         text = "❌ Musiqa topilmadi."
+    #     await tg_send(chat_id, text)
+    #     except Exception as e:
+    #         await tg_send(chat_id, f"❌ Shazam xatosi: {e}")
+    #     finally:
+    #         if wait_id:
+    #             try: await tg("deleteMessage", chat_id=chat_id, message_id=wait_id)
+    #             except: pass
+    #         if os.path.exists(temp): os.remove(temp)
 
 async def bg_clip(chat_id, photo_id, audio_id):
     p = f"temp/p_{uuid.uuid4()}.jpg"
