@@ -443,5 +443,20 @@ async def api_download_video(request: Request,
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+@app.on_event("startup")
+async def on_startup():
+    global BASE_URL
+    space_host = os.getenv("SPACE_HOST")
+    if space_host and BASE_URL == "http://localhost:7860":
+        BASE_URL = f"https://{space_host}"
+    if BOT_TOKEN and BASE_URL != "http://localhost:7860":
+        webhook_url = f"{BASE_URL}/webhook/bot"
+        async with aiohttp.ClientSession() as s:
+            async with s.post(f"{TG_API}/setWebhook", json={"url": webhook_url, "drop_pending_updates": True}) as r:
+                result = await r.json()
+                print(f"[*] Webhook: {webhook_url} -> {result.get('description', result)}")
+    else:
+        print(f"[!] Webhook o'rnatilmadi. BASE_URL ni HF Spaces Settings da sozlang: https://husanjon007-sadoon-api.hf.space")
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=7860)
