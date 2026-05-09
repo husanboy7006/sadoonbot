@@ -119,7 +119,7 @@ async def handle_cgi_final(message: Message, state: FSMContext):
             if gemini_client:
                 resp = await asyncio.wait_for(
                     gemini_client.aio.models.generate_content(
-                        model="gemini-1.5-flash",
+                        model="gemini-2.0-flash",
                         contents=[f"{CGI_PROMPT}\nVibe:{vibe} Format:{plat}",
                                   genai_types.Part.from_bytes(data=img_data, mime_type="image/jpeg")]
                     ), timeout=30)
@@ -157,7 +157,7 @@ async def handle_translate(message: Message, state: FSMContext):
             return await message.answer("❌ AI sozlanmagan.")
         res = await asyncio.wait_for(
             gemini_client.aio.models.generate_content(
-                model="gemini-1.5-flash",
+                model="gemini-2.0-flash",
                 contents=f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {message.text}"
             ), timeout=30)
         await message.answer(res.text)

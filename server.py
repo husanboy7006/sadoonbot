@@ -318,7 +318,7 @@ async def bg_translate(chat_id, text):
             await tg_send(chat_id, "❌ AI sozlanmagan (GEMINI_KEY yo'q).")
             return
         response = await ai_client.aio.models.generate_content(
-            model="gemini-1.5-flash",
+            model="gemini-2.0-flash",
             contents=f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {text}"
         )
         await tg_send(chat_id, response.text)
