@@ -443,20 +443,32 @@ async def api_download_video(request: Request,
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+async def _register_webhook():
+    await asyncio.sleep(5)
+    if not BOT_TOKEN or BASE_URL == "http://localhost:7860":
+        print(f"[!] Webhook o'rnatilmadi. BASE_URL={BASE_URL}")
+        return
+    webhook_url = f"{BASE_URL}/webhook/bot"
+    for attempt in range(5):
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as s:
+                async with s.post(f"{TG_API}/setWebhook", json={"url": webhook_url, "drop_pending_updates": True}) as r:
+                    result = await r.json()
+                    print(f"[*] Webhook: {webhook_url} -> {result.get('description', result)}")
+                    return
+        except Exception as e:
+            print(f"[!] Webhook attempt {attempt+1} failed: {e}")
+            if attempt < 4:
+                await asyncio.sleep(10)
+    print("[!] Webhook ro'yxatdan o'tmadi!")
+
 @app.on_event("startup")
 async def on_startup():
     global BASE_URL
     space_host = os.getenv("SPACE_HOST")
     if space_host and BASE_URL == "http://localhost:7860":
         BASE_URL = f"https://{space_host}"
-    if BOT_TOKEN and BASE_URL != "http://localhost:7860":
-        webhook_url = f"{BASE_URL}/webhook/bot"
-        async with aiohttp.ClientSession() as s:
-            async with s.post(f"{TG_API}/setWebhook", json={"url": webhook_url, "drop_pending_updates": True}) as r:
-                result = await r.json()
-                print(f"[*] Webhook: {webhook_url} -> {result.get('description', result)}")
-    else:
-        print(f"[!] Webhook o'rnatilmadi. BASE_URL ni HF Spaces Settings da sozlang: https://husanjon007-sadoon-api.hf.space")
+    asyncio.create_task(_register_webhook())
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=7860)
