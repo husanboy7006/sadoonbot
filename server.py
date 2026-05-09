@@ -31,7 +31,7 @@ def apply_dns_patch():
 apply_dns_patch()
 
 # --- 2. FASTAPI ---
-from fastapi import FastAPI, Request, Form, Header, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Request, Header, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
@@ -422,10 +422,11 @@ async def debug_state(user_id: str):
     return {"user_id": user_id, "state": state, "data": data}
 
 @app.post("/api/download-video")
-async def api_download_video(request: Request, url: Optional[str] = Form(None),
+async def api_download_video(request: Request,
                               x_api_key: Optional[str] = Header(None)):
     if SADOON_API_KEY and x_api_key != SADOON_API_KEY:
         raise HTTPException(403)
+    url = request.query_params.get("url")
     if url is None:
         try:
             data = await request.json()
