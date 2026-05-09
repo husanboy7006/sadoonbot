@@ -474,20 +474,38 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
 
     if state == "waiting_translate" and text:
         set_state(user_id, None)
-        if not ai_client:
-            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "❌ AI sozlanmagan (GEMINI_KEY yo'q)."})
-        try:
-            response = await asyncio.wait_for(
-                ai_client.aio.models.generate_content(
-                    model="gemini-2.0-flash-lite",
-                    contents=f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {text}"
-                ), timeout=30
-            )
-            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": response.text[:4000]})
-        except asyncio.TimeoutError:
-            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "⏰ AI vaqt tugadi. Qayta urinib ko'ring."})
-        except Exception as e:
-            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": f"❌ AI xatolik: {str(e)[:300]}"})
+        result = None
+        # 1. Gemini bilan urinib ko'r
+        if ai_client:
+            try:
+                response = await asyncio.wait_for(
+                    ai_client.aio.models.generate_content(
+                        model="gemini-2.0-flash-lite",
+                        contents=f"Translate the following text to Uzbek and Russian both. Show source language. Keep it short:\n{text}"
+                    ), timeout=20
+                )
+                result = response.text[:4000]
+            except Exception:
+                pass
+        # 2. Fallback: MyMemory (bepul, kalitsiz)
+        if not result:
+            try:
+                import urllib.parse
+                q = urllib.parse.quote(text[:500])
+                async with aiohttp.ClientSession() as s:
+                    async with s.get(
+                        f"https://api.mymemory.translated.net/get?q={q}&langpair=auto|uz",
+                        timeout=aiohttp.ClientTimeout(total=10)
+                    ) as r:
+                        data = await r.json()
+                        if data.get("responseStatus") == 200:
+                            t = data["responseData"]["translatedText"]
+                            result = f"🌐 Tarjima (O'zbekcha):\n{t}"
+            except Exception:
+                pass
+        if not result:
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "❌ Tarjima qilib bo'lmadi. Keyinroq urinib ko'ring."})
+        return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": result})
 
     if state == "waiting_cgi_photo" and photo:
         photo_id = photo[-1]["file_id"]
