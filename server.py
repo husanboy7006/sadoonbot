@@ -228,6 +228,36 @@ async def bg_clip(chat_id, photo_id, audio_id):
         for f in [p, a, v]:
             if os.path.exists(f): os.remove(f)
 
+async def bg_clip_from_url(chat_id, photo_id, url):
+    p = f"temp/p_{uuid.uuid4()}.jpg"
+    a = f"temp/a_{uuid.uuid4()}.mp3"
+    v = f"output/v_{uuid.uuid4()}.mp4"
+    wait_id = None
+    try:
+        wait = await tg("sendMessage", chat_id=chat_id, text="⏳ Musiqa yuklanmoqda...")
+        wait_id = wait.get("result", {}).get("message_id")
+        await tg_download(photo_id, p)
+        ok = await asyncio.wait_for(mixer.download_audio(url, a), timeout=60)
+        if not ok:
+            await tg_send(chat_id, "❌ Musiqa yuklab bo'lmadi.")
+            return
+        await tg("editMessageText", chat_id=chat_id, message_id=wait_id, text="🎬 Klip tayyorlanmoqda...")
+        wait_id = None
+        if await mixer.mix_image_audio(p, a, v):
+            await tg_send_file("sendVideo", chat_id, v, "video")
+        else:
+            await tg_send(chat_id, "❌ Klip yaratishda xatolik.")
+    except asyncio.TimeoutError:
+        await tg_send(chat_id, "⏰ Musiqa yuklanmadi (60s). Boshqa havola sinab ko'ring.")
+    except Exception as e:
+        await tg_send(chat_id, f"❌ Xato: {e}")
+    finally:
+        if wait_id:
+            try: await tg("deleteMessage", chat_id=chat_id, message_id=wait_id)
+            except: pass
+        for f in [p, a, v]:
+            if os.path.exists(f): os.remove(f)
+
 async def bg_translate(chat_id, text):
     try:
         if not ai_client:
@@ -431,12 +461,26 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
             "text": "🎵 Endi audio (musiqa) yuboring."
         })
 
-    if state == "waiting_clip_audio" and audio:
-        audio_id = audio["file_id"]
-        photo_id = state_data
-        set_state(user_id, None)
-        background_tasks.add_task(bg_clip, chat_id, photo_id, audio_id)
-        return JSONResponse({"ok": True})
+    if state == "waiting_clip_audio":
+        if audio:
+            audio_id = audio["file_id"]
+            photo_id = state_data
+            set_state(user_id, None)
+            background_tasks.add_task(bg_clip, chat_id, photo_id, audio_id)
+            return JSONResponse({"ok": True})
+        if text:
+            import re
+            urls = re.findall(r'https?://[^\s]+', text)
+            if urls:
+                url = urls[0].strip('.,()!?')
+                photo_id = state_data
+                set_state(user_id, None)
+                background_tasks.add_task(bg_clip_from_url, chat_id, photo_id, url)
+                return JSONResponse({"ok": True})
+        return JSONResponse({
+            "method": "sendMessage", "chat_id": chat_id,
+            "text": "❌ Audio fayl yoki (Instagram/TikTok/YouTube) havola yuboring."
+        })
 
     if state == "waiting_feedback" and text:
         set_state(user_id, None)
