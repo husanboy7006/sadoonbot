@@ -5,7 +5,6 @@ import asyncio
 import aiohttp
 from concurrent.futures import ThreadPoolExecutor
 from pydub import AudioSegment
-from shazamio import Shazam
 
 _executor = ThreadPoolExecutor(max_workers=os.cpu_count() or 4)
 
