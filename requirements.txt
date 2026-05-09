@@ -7,3 +7,4 @@ aiogram
 supabase
 google-genai
 instaloader
+python-multipart
