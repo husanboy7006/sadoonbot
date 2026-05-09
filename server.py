@@ -5,6 +5,7 @@ import logging
 import socket
 import aiohttp
 from typing import Optional
+import threading
 
 # --- 1. DNS PATCH ---
 def apply_dns_patch():
@@ -38,29 +39,38 @@ import uvicorn
 import mixer
 from database import Database
 import sqlite3
+import threading
 
 # --- 3. SQLITE STATE (user_id, state, state_data) ---
+sqlite_lock = threading.Lock()
+
 def init_sqlite():
-    with sqlite3.connect("local_states.db") as conn:
-        conn.execute("CREATE TABLE IF NOT EXISTS states (user_id TEXT PRIMARY KEY, state TEXT, data TEXT)")
-        try:
-            conn.execute("ALTER TABLE states ADD COLUMN data TEXT")
-        except: pass
-        conn.commit()
+    with sqlite_lock:
+        with sqlite3.connect("local_states.db") as conn:
+            conn.execute("CREATE TABLE IF NOT EXISTS states (user_id TEXT PRIMARY KEY, state TEXT, data TEXT)")
+            try:
+                conn.execute("ALTER TABLE states ADD COLUMN data TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+            except Exception as e:
+                print(f"[!] SQLite init error: {e}")
+            conn.commit()
 
 def set_state(user_id, state, data=""):
-    with sqlite3.connect("local_states.db") as conn:
-        conn.execute("INSERT OR REPLACE INTO states VALUES (?,?,?)", (str(user_id), state, data))
-        conn.commit()
+    with sqlite_lock:
+        with sqlite3.connect("local_states.db") as conn:
+            conn.execute("INSERT OR REPLACE INTO states VALUES (?,?,?)", (str(user_id), state, data))
+            conn.commit()
 
 def get_state(user_id):
-    with sqlite3.connect("local_states.db") as conn:
-        row = conn.execute("SELECT state, data FROM states WHERE user_id=?", (str(user_id),)).fetchone()
+    with sqlite_lock:
+        with sqlite3.connect("local_states.db") as conn:
+            row = conn.execute("SELECT state, data FROM states WHERE user_id=?", (str(user_id),)).fetchone()
     return (row[0], row[1]) if row else (None, "")
 
 init_sqlite()
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(filename='server.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 app = FastAPI()
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True,
@@ -71,10 +81,14 @@ if not os.path.exists("temp"): os.makedirs("temp")
 app.mount("/output", StaticFiles(directory="output"), name="output")
 
 # --- 4. CONFIG ---
-BASE_URL = os.getenv("BASE_URL", "https://husanjon007-sadoon-api.hf.space")
+BASE_URL = os.getenv("BASE_URL", "http://localhost:7860")
 SADOON_API_KEY = os.getenv("SADOON_API_KEY")
 BOT_TOKEN = os.getenv("HF_TOKEN") or os.getenv("BOT_TOKEN") or os.getenv("API_TOKEN")
-ADMIN_ID = os.getenv("ADMIN_ID", "5614682028")
+ADMIN_ID = os.getenv("ADMIN_ID")
+if not ADMIN_ID:
+    print("❌ ADMIN_ID environment variable not set!")
+    exit(1)
+ADMIN_ID = int(ADMIN_ID)
 TG_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 db = Database()
 

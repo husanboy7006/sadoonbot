@@ -17,14 +17,18 @@ from database import Database
 import mixer
 
 # --- LOGGING ---
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(filename='bot.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # --- CONFIG ---
 TOKEN = os.getenv("HF_TOKEN") or os.getenv("BOT_TOKEN") or os.getenv("API_TOKEN")
 GEMINI_KEY = os.getenv("GEMINI_KEY") or os.getenv("GEMINI_API_KEY")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "5614682028"))
+ADMIN_ID = os.getenv("ADMIN_ID")
+if not ADMIN_ID:
+    print("❌ ADMIN_ID environment variable not set!")
+    exit(1)
+ADMIN_ID = int(ADMIN_ID)
 WEBHOOK_PATH = f"/webhook/{TOKEN}"
-BASE_URL = os.getenv("BASE_URL", "https://husanjon007-sadoon-api.hf.space")
+BASE_URL = os.getenv("BASE_URL", "http://localhost:7860")
 
 if not TOKEN:
     print("❌ ERROR: Telegram BOT_TOKEN topilmadi!")
@@ -118,7 +122,7 @@ async def handle_cgi_final(message: Message, state: FSMContext):
                         model="gemini-1.5-flash",
                         contents=[f"{CGI_PROMPT}\nVibe:{vibe} Format:{plat}",
                                   genai_types.Part.from_bytes(data=img_data, mime_type="image/jpeg")]
-                    ), timeout=90)
+                    ), timeout=30)
                 if resp.candidates:
                     for part in resp.candidates[0].content.parts:
                         if hasattr(part, 'inline_data'):
@@ -151,10 +155,11 @@ async def handle_translate(message: Message, state: FSMContext):
     try:
         if not gemini_client:
             return await message.answer("❌ AI sozlanmagan.")
-        res = await gemini_client.aio.models.generate_content(
-            model="gemini-1.5-flash",
-            contents=f"Tarjima qiling: {message.text}"
-        )
+        res = await asyncio.wait_for(
+            gemini_client.aio.models.generate_content(
+                model="gemini-1.5-flash",
+                contents=f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {message.text}"
+            ), timeout=30)
         await message.answer(res.text)
     except Exception as e:
         await message.answer(f"❌ Xato: {e}")
@@ -198,7 +203,9 @@ async def handle_shazam(message: Message, state: FSMContext):
         await bot.download_file(file.file_path, temp)
         info = await mixer.identify_music(temp)
         if info:
-            text = f"✅ Topildi!\n🎵 {info['title']}\n👤 {info['subtitle']}"
+            title = info.get('title', 'Noma\'lum')
+            subtitle = info.get('subtitle', 'Noma\'lum')
+            text = f"✅ Topildi!\n🎵 {title}\n👤 {subtitle}"
             await message.answer(text)
         else:
             await message.answer("❌ Topilmadi.")
@@ -262,8 +269,17 @@ async def echo(message: Message):
     await message.answer("Asosiy menyu:", reply_markup=main_keyboard)
 
 def extract_url(text: str):
-    urls = re.findall(r'http[s]?://[^\s]+', text)
-    return urls[0].strip('.,()!?*') if urls else None
+    from urllib.parse import urlparse
+    urls = re.findall(r'https?://[^\s]+', text)
+    for url in urls:
+        url = url.strip('.,()!?*')
+        try:
+            parsed = urlparse(url)
+            if parsed.scheme in ('http', 'https') and parsed.netloc:
+                return url
+        except:
+            continue
+    return None
 
 async def main():
     await bot.delete_webhook(drop_pending_updates=True)

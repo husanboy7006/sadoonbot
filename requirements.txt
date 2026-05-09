@@ -2,10 +2,8 @@ requests
 pydub
 shazamio
 yt-dlp
-aiohttp
-uvicorn
 fastapi
-python-multipart
+uvicorn
 aiogram
 supabase
 google-genai

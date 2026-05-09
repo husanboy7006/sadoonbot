@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pydub import AudioSegment
 from shazamio import Shazam
 
-_executor = ThreadPoolExecutor(max_workers=2)
+_executor = ThreadPoolExecutor(max_workers=os.cpu_count() or 4)
 
 # FFmpeg yo'lini aniqlash
 ffmpeg_binary = "ffmpeg"
@@ -205,12 +205,12 @@ async def download_directly(url, path):
     try:
         headers = {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"}
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers, timeout=300) as response:
+            async with session.get(url, headers=headers, timeout=60) as response:
                 if response.status != 200:
                     return False
                 with open(path, 'wb') as f:
                     while True:
-                        chunk = await response.content.read(8192)
+                        chunk = await response.content.read(1024*1024)  # 1MB chunks
                         if not chunk:
                             break
                         f.write(chunk)
@@ -224,21 +224,22 @@ async def get_cobalt_url_custom(url, api_url, mode):
     data = {"url": url, "videoQuality": "720", "downloadMode": mode, "audioFormat": "mp3"}
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(api_url, json=data, headers=headers, timeout=15) as response:
+            async with session.post(api_url, json=data, headers=headers, timeout=5) as response:
                 if response.status == 200:
                     res = await response.json()
                     if "url" in res: return res["url"]
-    except: pass
+    except Exception as e:
+        print(f"[!] Cobalt {api_url} error: {e}")
     return None
 
 async def mix_image_audio(image_path: str, audio_path: str, output_path: str):
     print(f"[*] Mixing image + audio (async) -> {output_path}")
     try:
         # -preset ultrafast va -crf 28 tezlikni oshirish uchun
-        cmd = [ffmpeg_binary, "-y", "-loop", "1", "-i", image_path, "-i", audio_path,
+        cmd = [ffmpeg_binary, "-y", "-loop", "1", "-i", f'"{image_path}"', "-i", f'"{audio_path}"',
                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28", "-b:v", "800k", 
                "-tune", "stillimage", "-c:a", "aac", "-b:a", "128k", "-pix_fmt", "yuv420p", 
-               "-shortest", output_path]
+               "-shortest", f'"{output_path}"']
         
         process = await asyncio.create_subprocess_exec(*cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stdout, stderr = await process.communicate()
