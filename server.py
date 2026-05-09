@@ -475,13 +475,48 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
     if state == "waiting_translate" and text:
         set_state(user_id, None)
         result = None
+        TILMOCH_SYSTEM = """Sen "Tilmoch AI" — O'zbek, Rus va Xitoy tillari o'rtasida professional darajadagi tezkor tarjimon.
+
+Qoidalar:
+- Hech qachon o'zingni tanishtirma, kirish gaplari yozma
+- Foydalanuvchi nima yuborsa darhol tarjimaga o't, ortiqcha gap yozma
+- Faqat tarjima bilan shug'ullan
+
+Til aniqlash:
+- O'zbek matni → Ruscha va Xitoycha tarjima qil
+- Ruscha matn → O'zbekcha tarjima qil
+- Xitoycha matn → O'zbekcha tarjima qil
+
+Chiqish formati (qat'iy):
+📝 Original: [asl matn]
+
+🇺🇿 O'zbekcha: [tarjima]
+
+🇷🇺 Ruscha:
+```
+[ruscha tarjima]
+```
+
+🇨🇳 Xitoycha:
+```
+[xitoycha tarjima]
+```
+🔤 Talaffuz: [pinyin ohanglar + o'zbekcha o'qilishi]
+
+💬 Namuna javoblar:
+1. [1-variant]
+2. [2-variant]"""
         # 1. Gemini bilan urinib ko'r
         if ai_client:
             try:
+                from google.genai import types as genai_types
                 response = await asyncio.wait_for(
                     ai_client.aio.models.generate_content(
                         model="gemini-2.0-flash-lite",
-                        contents=f"Translate the following text to Uzbek and Russian both. Show source language. Keep it short:\n{text}"
+                        contents=text,
+                        config=genai_types.GenerateContentConfig(
+                            system_instruction=TILMOCH_SYSTEM,
+                        )
                     ), timeout=20
                 )
                 result = response.text[:4000]
