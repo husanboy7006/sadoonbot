@@ -471,8 +471,20 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
 
     if state == "waiting_translate" and text:
         set_state(user_id, None)
-        background_tasks.add_task(bg_translate, chat_id, text)
-        return JSONResponse({"ok": True})
+        if not ai_client:
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "❌ AI sozlanmagan (GEMINI_KEY yo'q)."})
+        try:
+            response = await asyncio.wait_for(
+                ai_client.aio.models.generate_content(
+                    model="gemini-2.0-flash",
+                    contents=f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {text}"
+                ), timeout=30
+            )
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": response.text[:4000]})
+        except asyncio.TimeoutError:
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "⏰ AI vaqt tugadi. Qayta urinib ko'ring."})
+        except Exception as e:
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": f"❌ AI xatolik: {str(e)[:300]}"})
 
     if state == "waiting_cgi_photo" and photo:
         photo_id = photo[-1]["file_id"]
@@ -492,8 +504,37 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         plat = plat_map.get(choices[1], "Instagram")
         photo_id = state_data
         set_state(user_id, None)
-        background_tasks.add_task(bg_cgi, chat_id, photo_id, vibe, plat)
-        return JSONResponse({"ok": True})
+        if not ai_client:
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "❌ GEMINI_KEY sozlanmagan."})
+        p = f"temp/p_{uuid.uuid4()}.jpg"
+        try:
+            await tg_download(photo_id, p)
+            with open(p, "rb") as f:
+                img_data = f.read()
+            from google.genai import types as genai_types
+            prompt = CGI_PROMPT.format(vibe=vibe, plat=plat)
+            response = await asyncio.wait_for(
+                ai_client.aio.models.generate_content(
+                    model="gemini-2.0-flash-exp",
+                    contents=[genai_types.Part.from_bytes(data=img_data, mime_type="image/jpeg"), prompt],
+                    config=genai_types.GenerateContentConfig(response_modalities=["IMAGE", "TEXT"])
+                ), timeout=55
+            )
+            for part in response.candidates[0].content.parts:
+                if hasattr(part, 'inline_data') and part.inline_data:
+                    out = f"output/cgi_{uuid.uuid4()}.jpg"
+                    with open(out, "wb") as f:
+                        f.write(part.inline_data.data)
+                    file_url = f"{BASE_URL}/output/{os.path.basename(out)}"
+                    background_tasks.add_task(_cleanup_file, out, 300)
+                    return JSONResponse({"method": "sendPhoto", "chat_id": chat_id, "photo": file_url, "caption": f"💎 CGI: {vibe} / {plat}"})
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "❌ Gemini rasm yarata olmadi."})
+        except asyncio.TimeoutError:
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "⏰ CGI vaqt tugadi (55s). Qayta urinib ko'ring."})
+        except Exception as e:
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": f"❌ CGI xatolik: {str(e)[:200]}"})
+        finally:
+            if os.path.exists(p): os.remove(p)
 
     if state == "waiting_shazam" and (audio or video):
         file_id = audio["file_id"] if audio else video["file_id"]
@@ -510,25 +551,37 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         })
 
     if state == "waiting_clip_audio":
-        if audio:
-            audio_id = audio["file_id"]
-            photo_id = state_data
-            set_state(user_id, None)
-            background_tasks.add_task(bg_clip, chat_id, photo_id, audio_id)
-            return JSONResponse({"ok": True})
-        if text:
-            import re
-            urls = re.findall(r'https?://[^\s]+', text)
-            if urls:
-                url = urls[0].strip('.,()!?')
-                photo_id = state_data
-                set_state(user_id, None)
-                background_tasks.add_task(bg_clip_from_url, chat_id, photo_id, url)
-                return JSONResponse({"ok": True})
-        return JSONResponse({
-            "method": "sendMessage", "chat_id": chat_id,
-            "text": "❌ Audio fayl yoki (Instagram/TikTok/YouTube) havola yuboring."
-        })
+        photo_id = state_data
+        set_state(user_id, None)
+        p = f"temp/p_{uuid.uuid4()}.jpg"
+        a = f"temp/a_{uuid.uuid4()}.mp3"
+        v = f"output/v_{uuid.uuid4()}.mp4"
+        try:
+            await tg_download(photo_id, p)
+            if audio:
+                await tg_download(audio["file_id"], a)
+            elif text:
+                import re
+                urls = re.findall(r'https?://[^\s]+', text)
+                if not urls:
+                    return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "❌ Audio fayl yoki havola yuboring."})
+                ok = await asyncio.wait_for(mixer.download_audio(urls[0].strip('.,()!?'), a), timeout=55)
+                if not ok:
+                    return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "❌ Musiqa yuklab bo'lmadi."})
+            else:
+                return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "❌ Audio fayl yoki havola yuboring."})
+            if not await mixer.mix_image_audio(p, a, v):
+                return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "❌ Klip yaratishda xatolik."})
+            file_url = f"{BASE_URL}/output/{os.path.basename(v)}"
+            background_tasks.add_task(_cleanup_file, v, 300)
+            return JSONResponse({"method": "sendVideo", "chat_id": chat_id, "video": file_url, "supports_streaming": True})
+        except asyncio.TimeoutError:
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "⏰ Vaqt tugadi. Qisqaroq video sinab ko'ring."})
+        except Exception as e:
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": f"❌ Xato: {str(e)[:200]}"})
+        finally:
+            for f in [p, a]:
+                if os.path.exists(f): os.remove(f)
 
     if state == "waiting_feedback" and text:
         set_state(user_id, None)
