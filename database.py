@@ -23,7 +23,7 @@ class Database:
     def get_balance(self, user_id):
         if not self.supabase: return 0
         try:
-            res = self.supabase.table("users").select("balance").eq("user_id", user_id).execute()
+            res = self.supabase.table("users").select("balance").eq("user_id", str(user_id)).execute()
             if res.data:
                 data = res.data[0]
                 return data.get("balance", 0)

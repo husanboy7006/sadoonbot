@@ -89,7 +89,7 @@ async def download_instagram(url: str, output_path: str):
                             return True
             return False
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await asyncio.wait_for(
             loop.run_in_executor(_executor, _run), timeout=60
         )
@@ -184,7 +184,7 @@ async def yt_dlp_download(url, output_path, is_audio=False):
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([url])
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.run_in_executor(_executor, _run)
             
         # Natijani tekshirish
@@ -235,10 +235,10 @@ async def mix_image_audio(image_path: str, audio_path: str, output_path: str):
     print(f"[*] Mixing image + audio (async) -> {output_path}")
     try:
         # -preset ultrafast va -crf 28 tezlikni oshirish uchun
-        cmd = [ffmpeg_binary, "-y", "-loop", "1", "-i", f'"{image_path}"', "-i", f'"{audio_path}"',
-               "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28", "-b:v", "800k", 
-               "-tune", "stillimage", "-c:a", "aac", "-b:a", "128k", "-pix_fmt", "yuv420p", 
-               "-shortest", f'"{output_path}"']
+        cmd = [ffmpeg_binary, "-y", "-loop", "1", "-i", image_path, "-i", audio_path,
+               "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28", "-b:v", "800k",
+               "-tune", "stillimage", "-c:a", "aac", "-b:a", "128k", "-pix_fmt", "yuv420p",
+               "-shortest", output_path]
         
         process = await asyncio.create_subprocess_exec(*cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stdout, stderr = await process.communicate()

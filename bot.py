@@ -285,6 +285,8 @@ def extract_url(text: str):
     return None
 
 async def main():
+    os.makedirs("temp", exist_ok=True)
+    os.makedirs("output", exist_ok=True)
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
