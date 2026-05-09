@@ -103,8 +103,9 @@ if GEMINI_KEY:
 MAIN_KB = {
     "keyboard": [
         [{"text": "🎬 Klip Yaratish (V3) (🖼️ rasm + 🎵 musiqa)"}],
+        [{"text": "🚀 CGI Product Artist (Premium v2)"}],
         [{"text": "📥 Yuklab olish"}, {"text": "🔍 Shazam"}],
-        [{"text": "💎 Balans"}],
+        [{"text": "🌐 Tilmoch AI"}, {"text": "💎 Balans"}],
         [{"text": "✍️ Takliflar"}, {"text": "💰 To'ldirish"}]
     ],
     "resize_keyboard": True
@@ -232,7 +233,7 @@ async def bg_translate(chat_id, text):
         if not ai_client:
             await tg_send(chat_id, "❌ AI sozlanmagan (GEMINI_KEY yo'q).")
             return
-        response = ai_client.models.generate_content(
+        response = await ai_client.aio.models.generate_content(
             model="gemini-1.5-flash",
             contents=f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {text}"
         )
@@ -315,6 +316,22 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
             "text": "🖼️ Rasm yuboring."
         })
 
+    # 🌐 Tilmoch AI
+    if text == "🌐 Tilmoch AI":
+        set_state(user_id, "waiting_translate")
+        return JSONResponse({
+            "method": "sendMessage", "chat_id": chat_id,
+            "text": "✍️ Tarjima qilinadigan matnni yuboring."
+        })
+
+    # 🚀 CGI
+    if text == "🚀 CGI Product Artist (Premium v2)":
+        set_state(user_id, "waiting_cgi_photo")
+        return JSONResponse({
+            "method": "sendMessage", "chat_id": chat_id,
+            "text": "📸 Reklama qilmoqchi bo'lgan mahsulotingiz rasmini yuboring."
+        })
+
     # ✍️ Takliflar
     if text == "✍️ Takliflar":
         set_state(user_id, "waiting_feedback")
@@ -366,6 +383,38 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
             "text": "❌ Havola topilmadi. Iltimos, to'g'ri URL yuboring."
+        })
+
+    if state == "waiting_translate" and text:
+        set_state(user_id, None)
+        background_tasks.add_task(bg_translate, chat_id, text)
+        return JSONResponse({"ok": True})
+
+    if state == "waiting_cgi_photo" and photo:
+        photo_id = photo[-1]["file_id"]
+        set_state(user_id, "waiting_cgi_choices", photo_id)
+        return JSONResponse({
+            "method": "sendMessage", "chat_id": chat_id,
+            "text": "🎨 Vibe: 1-Luxury 2-Fresh 3-Dark 4-Minimal 5-Energetic\n📐 Platforma: 1-Instagram 2-Story 3-Banner 4-Poster\nMisol: 1 2"
+        })
+
+    if state == "waiting_cgi_choices" and text:
+        choices = text.split()
+        if len(choices) < 2:
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "Iltimos, ikkita raqam yuboring: masalan 1 2"})
+        vibe_map = {"1": "Luxury", "2": "Fresh", "3": "Dark", "4": "Minimal", "5": "Energetic"}
+        plat_map = {"1": "Instagram", "2": "Story", "3": "Banner", "4": "Poster"}
+        vibe = vibe_map.get(choices[0], "Luxury")
+        plat = plat_map.get(choices[1], "Instagram")
+        photo_id = state_data
+        set_state(user_id, None)
+        import urllib.parse
+        f_prompt = f"product photography {vibe} style {plat}"
+        flux_url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(f_prompt)}?nologo=true"
+        return JSONResponse({
+            "method": "sendPhoto", "chat_id": chat_id,
+            "photo": flux_url,
+            "caption": f"✅ CGI: {vibe} / {plat}"
         })
 
     if state == "waiting_shazam" and (audio or video):
