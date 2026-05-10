@@ -512,7 +512,7 @@ Chiqish formati (qat'iy):
                 from google.genai import types as genai_types
                 response = await asyncio.wait_for(
                     ai_client.aio.models.generate_content(
-                        model="gemini-2.0-flash-lite",
+                        model="gemini-1.5-flash",
                         contents=text,
                         config=genai_types.GenerateContentConfig(
                             system_instruction=TILMOCH_SYSTEM,
@@ -521,7 +521,20 @@ Chiqish formati (qat'iy):
                 )
                 result = response.text[:4000]
             except Exception as e:
-                print(f"[!] Tilmoch Gemini xato: {e}")
+                print(f"[!] Tilmoch gemini-1.5-flash xato: {e}")
+                try:
+                    response = await asyncio.wait_for(
+                        ai_client.aio.models.generate_content(
+                            model="gemini-2.0-flash",
+                            contents=text,
+                            config=genai_types.GenerateContentConfig(
+                                system_instruction=TILMOCH_SYSTEM,
+                            )
+                        ), timeout=20
+                    )
+                    result = response.text[:4000]
+                except Exception as e2:
+                    print(f"[!] Tilmoch gemini-2.0-flash xato: {e2}")
         # 2. Fallback: MyMemory (bepul, kalitsiz)
         if not result:
             try:
