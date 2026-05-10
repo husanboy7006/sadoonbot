@@ -520,8 +520,8 @@ Chiqish formati (qat'iy):
                     ), timeout=20
                 )
                 result = response.text[:4000]
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[!] Tilmoch Gemini xato: {e}")
         # 2. Fallback: MyMemory (bepul, kalitsiz)
         if not result:
             try:
@@ -529,15 +529,17 @@ Chiqish formati (qat'iy):
                 q = urllib.parse.quote(text[:500])
                 async with aiohttp.ClientSession() as s:
                     async with s.get(
-                        f"https://api.mymemory.translated.net/get?q={q}&langpair=auto|uz",
+                        f"https://api.mymemory.translated.net/get?q={q}&langpair=ru|uz",
                         timeout=aiohttp.ClientTimeout(total=10)
                     ) as r:
                         data = await r.json()
                         if data.get("responseStatus") == 200:
                             t = data["responseData"]["translatedText"]
                             result = f"🌐 Tarjima (O'zbekcha):\n{t}"
-            except Exception:
-                pass
+                        else:
+                            print(f"[!] MyMemory xato: {data}")
+            except Exception as e:
+                print(f"[!] MyMemory fallback xato: {e}")
         if not result:
             return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "❌ Tarjima qilib bo'lmadi. Keyinroq urinib ko'ring."})
         return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": result})
