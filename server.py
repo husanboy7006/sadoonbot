@@ -102,6 +102,19 @@ if GEMINI_KEY:
 else:
     print("[!] GEMINI_KEY topilmadi!")
 
+# --- 5b. GROQ ---
+GROQ_KEY = os.getenv("GROQ_KEY")
+groq_client = None
+if GROQ_KEY:
+    try:
+        from groq import AsyncGroq
+        groq_client = AsyncGroq(api_key=GROQ_KEY)
+        print(f"[*] Groq key loaded: ...{GROQ_KEY[-6:]}")
+    except ImportError:
+        print("[!] groq paketi o'rnatilmagan!")
+else:
+    print("[!] GROQ_KEY topilmadi!")
+
 # --- 6. KEYBOARD ---
 MAIN_KB = {
     "keyboard": [
@@ -506,8 +519,23 @@ Chiqish formati (qat'iy):
 💬 Namuna javoblar:
 1. [1-variant]
 2. [2-variant]"""
-        # 1. Gemini bilan urinib ko'r
-        if ai_client:
+        # 1. Groq bilan urinib ko'r (asosiy)
+        if groq_client and not result:
+            try:
+                chat = await groq_client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {"role": "system", "content": TILMOCH_SYSTEM},
+                        {"role": "user", "content": text}
+                    ],
+                    max_tokens=1500,
+                    timeout=20
+                )
+                result = chat.choices[0].message.content[:4000]
+            except Exception as e:
+                print(f"[!] Tilmoch Groq xato: {e}")
+        # 2. Gemini fallback
+        if ai_client and not result:
             try:
                 from google.genai import types as genai_types
                 response = await asyncio.wait_for(
@@ -521,20 +549,7 @@ Chiqish formati (qat'iy):
                 )
                 result = response.text[:4000]
             except Exception as e:
-                print(f"[!] Tilmoch gemini-1.5-flash xato: {e}")
-                try:
-                    response = await asyncio.wait_for(
-                        ai_client.aio.models.generate_content(
-                            model="gemini-2.0-flash",
-                            contents=text,
-                            config=genai_types.GenerateContentConfig(
-                                system_instruction=TILMOCH_SYSTEM,
-                            )
-                        ), timeout=20
-                    )
-                    result = response.text[:4000]
-                except Exception as e2:
-                    print(f"[!] Tilmoch gemini-2.0-flash xato: {e2}")
+                print(f"[!] Tilmoch Gemini xato: {e}")
         # 2. Fallback: MyMemory (bepul, kalitsiz)
         if not result:
             try:
