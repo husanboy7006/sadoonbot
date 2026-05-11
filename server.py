@@ -115,6 +115,14 @@ if GROQ_KEY:
 else:
     print("[!] GROQ_KEY topilmadi!")
 
+# --- 5c. REPLICATE ---
+REPLICATE_KEY = os.getenv("REPLICATE_KEY")
+if REPLICATE_KEY:
+    os.environ["REPLICATE_API_TOKEN"] = REPLICATE_KEY
+    print(f"[*] Replicate key loaded: ...{REPLICATE_KEY[-6:]}")
+else:
+    print("[!] REPLICATE_KEY topilmadi!")
+
 # --- 6. KEYBOARD ---
 MAIN_KB = {
     "keyboard": [
@@ -284,42 +292,38 @@ Vibe: {vibe}
 Platform format: {plat}"""
 
 async def bg_cgi(chat_id, photo_id, vibe, plat):
+    import base64, replicate as repl
     p = f"temp/p_{uuid.uuid4()}.jpg"
     wait_id = None
     try:
-        wait = await tg("sendMessage", chat_id=chat_id, text="⏳ CGI Artist ishlamoqda (20-30 soniya)...")
+        wait = await tg("sendMessage", chat_id=chat_id, text="⏳ CGI Artist ishlamoqda (30-60 soniya)...")
         wait_id = wait.get("result", {}).get("message_id")
         await tg_download(photo_id, p)
-        if not ai_client:
-            await tg_send(chat_id, "❌ GEMINI_KEY sozlanmagan.")
-            return
         with open(p, "rb") as f:
-            img_data = f.read()
-        from google.genai import types as genai_types
-        prompt = CGI_PROMPT.format(vibe=vibe, plat=plat)
-        response = await asyncio.wait_for(
-            ai_client.aio.models.generate_content(
-                model="gemini-2.0-flash-exp",
-                contents=[
-                    genai_types.Part.from_bytes(data=img_data, mime_type="image/jpeg"),
-                    prompt
-                ],
-                config=genai_types.GenerateContentConfig(
-                    response_modalities=["IMAGE", "TEXT"]
-                )
-            ), timeout=60
+            img_b64 = base64.b64encode(f.read()).decode()
+        img_uri = f"data:image/jpeg;base64,{img_b64}"
+        prompt = (
+            f"Ultra-high-end CGI product photography, {vibe} style, "
+            f"professional studio lighting with dramatic shadows, luxury background, "
+            f"commercial advertising for {plat}, 8K resolution, photorealistic, "
+            f"award-winning product shot, no text, no watermark"
         )
-        for part in response.candidates[0].content.parts:
-            if hasattr(part, 'inline_data') and part.inline_data:
-                out = f"output/cgi_{uuid.uuid4()}.jpg"
-                with open(out, "wb") as f:
-                    f.write(part.inline_data.data)
-                await tg_send_file("sendPhoto", chat_id, out, "photo", caption=f"💎 CGI: {vibe} / {plat}")
-                if os.path.exists(out): os.remove(out)
-                return
-        await tg_send(chat_id, "❌ Gemini rasm yarata olmadi. Keyinroq sinab ko'ring.")
-    except asyncio.TimeoutError:
-        await tg_send(chat_id, "⏰ Vaqt tugadi. Keyinroq sinab ko'ring.")
+        output = await repl.async_run(
+            "black-forest-labs/flux-dev",
+            input={
+                "prompt": prompt,
+                "image": img_uri,
+                "strength": 0.75,
+                "num_inference_steps": 28,
+                "guidance": 3.5,
+                "output_format": "jpeg",
+            }
+        )
+        img_url = str(output[0]) if output else None
+        if img_url:
+            await tg("sendPhoto", chat_id=chat_id, photo=img_url, caption=f"💎 CGI: {vibe} / {plat}")
+        else:
+            await tg_send(chat_id, "❌ Replicate rasm yarata olmadi.")
     except Exception as e:
         await tg_send(chat_id, f"❌ CGI xatolik: {str(e)[:200]}")
     finally:
@@ -590,37 +594,10 @@ Chiqish formati (qat'iy):
         plat = plat_map.get(choices[1], "Instagram")
         photo_id = state_data
         set_state(user_id, None)
-        if not ai_client:
-            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "❌ GEMINI_KEY sozlanmagan."})
-        p = f"temp/p_{uuid.uuid4()}.jpg"
-        try:
-            await tg_download(photo_id, p)
-            with open(p, "rb") as f:
-                img_data = f.read()
-            from google.genai import types as genai_types
-            prompt = CGI_PROMPT.format(vibe=vibe, plat=plat)
-            response = await asyncio.wait_for(
-                ai_client.aio.models.generate_content(
-                    model="gemini-2.0-flash-exp",
-                    contents=[genai_types.Part.from_bytes(data=img_data, mime_type="image/jpeg"), prompt],
-                    config=genai_types.GenerateContentConfig(response_modalities=["IMAGE", "TEXT"])
-                ), timeout=55
-            )
-            for part in response.candidates[0].content.parts:
-                if hasattr(part, 'inline_data') and part.inline_data:
-                    out = f"output/cgi_{uuid.uuid4()}.jpg"
-                    with open(out, "wb") as f:
-                        f.write(part.inline_data.data)
-                    file_url = f"{BASE_URL}/output/{os.path.basename(out)}"
-                    background_tasks.add_task(_cleanup_file, out, 300)
-                    return JSONResponse({"method": "sendPhoto", "chat_id": chat_id, "photo": file_url, "caption": f"💎 CGI: {vibe} / {plat}"})
-            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "❌ Gemini rasm yarata olmadi."})
-        except asyncio.TimeoutError:
-            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "⏰ CGI vaqt tugadi (55s). Qayta urinib ko'ring."})
-        except Exception as e:
-            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": f"❌ CGI xatolik: {str(e)[:200]}"})
-        finally:
-            if os.path.exists(p): os.remove(p)
+        if not REPLICATE_KEY:
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "❌ REPLICATE_KEY sozlanmagan."})
+        background_tasks.add_task(bg_cgi, chat_id, photo_id, vibe, plat)
+        return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "⏳ CGI Artist ishlamoqda (30-60 soniya)..."})
 
     if state == "waiting_shazam" and (audio or video):
         file_id = audio["file_id"] if audio else video["file_id"]
