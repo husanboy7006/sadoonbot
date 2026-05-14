@@ -41,9 +41,6 @@ EXPOSE 7860
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:7860/ || exit 1
 
-# Run the application
-CMD ["python", "server.py"]
-
 # Hugging Face Spaces porti
 ENV PORT=7860
 EXPOSE 7860

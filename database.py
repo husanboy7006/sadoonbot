@@ -17,9 +17,6 @@ class Database:
             except Exception as e:
                 print(f"❌ Supabase ulanish xatosi: {e}")
 
-    def init_db(self):
-        pass
-
     def get_balance(self, user_id):
         if not self.supabase: return 0
         try:
@@ -141,8 +138,12 @@ class Database:
             except: pass
             
             # Hisoblash uchun lug'atlar
-            total_bd = {"mix": 0, "shazam": 0, "download": 0, "cgi": 0}
-            today_bd = {"mix": 0, "shazam": 0, "download": 0, "cgi": 0}
+            total_bd = {"mix": 0, "shazam": 0, "download": 0, "cgi": 0, "translate": 0,
+                        "smm_post": 0, "smm_reels": 0, "smm_plan": 0,
+                        "smm_hashtag": 0, "smm_caption": 0, "smm_strategy": 0}
+            today_bd = {"mix": 0, "shazam": 0, "download": 0, "cgi": 0, "translate": 0,
+                        "smm_post": 0, "smm_reels": 0, "smm_plan": 0,
+                        "smm_hashtag": 0, "smm_caption": 0, "smm_strategy": 0}
             
             today_str = str(today)
             for item in data:
@@ -160,16 +161,22 @@ class Database:
             report += f"👥 <b>Foydalanuvchilar</b>\n"
             report += f"├─ Jami: {total_users} kishi\n"
             report += f"└─ Bugun: +{new_users_today} yangi\n\n"
+            smm_today = sum(today_bd[k] for k in ("smm_post", "smm_reels", "smm_plan", "smm_hashtag", "smm_caption", "smm_strategy"))
+            smm_total = sum(total_bd[k] for k in ("smm_post", "smm_reels", "smm_plan", "smm_hashtag", "smm_caption", "smm_strategy"))
             report += f"📅 <b>BUGUNGI AKTIVLIK:</b>\n"
             report += f"├─ 🎬 Klip yasash: {today_bd['mix']}\n"
             report += f"├─ 🔍 Musiqa topish: {today_bd['shazam']}\n"
             report += f"├─ 🚀 CGI Artist: {today_bd['cgi']}\n"
-            report += f"└─ 📥 Instagram: {today_bd['download']}\n\n"
+            report += f"├─ 📥 Yuklab olish: {today_bd['download']}\n"
+            report += f"├─ 🌐 Tarjima: {today_bd['translate']}\n"
+            report += f"└─ ✍️ SMM Studio: {smm_today}\n\n"
             report += f"🚀 <b>UMUMIY AKTIVLIK:</b>\n"
             report += f"├─ 🎬 Klip yasash: {total_bd['mix']}\n"
             report += f"├─ 🔍 Musiqa topish: {total_bd['shazam']}\n"
             report += f"├─ 🚀 CGI Artist: {total_bd['cgi']}\n"
-            report += f"└─ 📥 Instagram: {total_bd['download']}\n\n"
+            report += f"├─ 📥 Yuklab olish: {total_bd['download']}\n"
+            report += f"├─ 🌐 Tarjima: {total_bd['translate']}\n"
+            report += f"└─ ✍️ SMM Studio: {smm_total}\n\n"
             report += f"📈 <b>JAMI AMALLAR:</b> {len(data)} marta\n"
             report += f"━━━━━━━━━━━━━━━"
             return report

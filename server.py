@@ -38,8 +38,10 @@ from fastapi.responses import JSONResponse
 import uvicorn
 import mixer
 from database import Database
+from openai import AsyncOpenAI
+from smm_prompts import post as smm_post, reels as smm_reels, plan as smm_plan
+from smm_prompts import hashtag as smm_hashtag, caption as smm_caption, strategy as smm_strategy
 import sqlite3
-import threading
 
 # --- 3. SQLITE STATE (user_id, state, state_data) ---
 sqlite_lock = threading.Lock()
@@ -73,7 +75,7 @@ init_sqlite()
 logging.basicConfig(filename='server.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 app = FastAPI()
 
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True,
+app.add_middleware(CORSMiddleware, allow_origins=["https://huggingface.co"], allow_credentials=True,
                    allow_methods=["*"], allow_headers=["*"])
 
 if not os.path.exists("output"): os.makedirs("output")
@@ -123,6 +125,24 @@ if REPLICATE_KEY:
 else:
     print("[!] REPLICATE_KEY topilmadi!")
 
+# --- 5d. OPENAI ---
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+openai_client = None
+if OPENAI_API_KEY:
+    openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+    print(f"[*] OpenAI key loaded: ...{OPENAI_API_KEY[-6:]}")
+else:
+    print("[!] OPENAI_API_KEY topilmadi!")
+
+SMM_PROMPTS = {
+    "smm_post": smm_post.SYSTEM_PROMPT,
+    "smm_reels": smm_reels.SYSTEM_PROMPT,
+    "smm_plan": smm_plan.SYSTEM_PROMPT,
+    "smm_hashtag": smm_hashtag.SYSTEM_PROMPT,
+    "smm_caption": smm_caption.SYSTEM_PROMPT,
+    "smm_strategy": smm_strategy.SYSTEM_PROMPT,
+}
+
 # --- 6. KEYBOARD ---
 MAIN_KB = {
     "keyboard": [
@@ -130,7 +150,18 @@ MAIN_KB = {
         [{"text": "🚀 CGI Product Artist (Premium v2)"}],
         [{"text": "📥 Yuklab olish"}, {"text": "🔍 Shazam"}],
         [{"text": "🌐 Tilmoch AI"}, {"text": "💎 Balans"}],
+        [{"text": "✍️ SMM Studio"}],
         [{"text": "✍️ Takliflar"}, {"text": "💰 To'ldirish"}]
+    ],
+    "resize_keyboard": True
+}
+
+SMM_KB = {
+    "keyboard": [
+        [{"text": "📝 Post yozish"}, {"text": "🎬 Reels ssenariy"}],
+        [{"text": "📅 Kontent plan"}, {"text": "#️⃣ Hashtag"}],
+        [{"text": "💬 Caption"}, {"text": "📊 Strategiya"}],
+        [{"text": "🔙 Orqaga"}]
     ],
     "resize_keyboard": True
 }
@@ -187,47 +218,36 @@ async def _cleanup_file(path, delay=60):
         if os.path.exists(path): os.remove(path)
     except: pass
 
-async def bg_download(chat_id, url):
-    output = f"output/v_{uuid.uuid4()}.mp4"
-    try:
-        print(f"[BG] Downloading: {url[:50]}")
-        success = await asyncio.wait_for(
-            mixer.download_video(url, output), timeout=90
-        )
-        print(f"[BG] Download result: {success}")
-        if success:
-            await tg_send_file("sendVideo", chat_id, output, "video")
-        else:
-            await tg_send(chat_id, "❌ Yuklab bo'lmadi. Boshqa havola yoki TikTok/YouTube sinab ko'ring.")
-    except asyncio.TimeoutError:
-        await tg_send(chat_id, "⏰ Vaqt tugadi (90s). Havola juda katta yoki bloklanган.")
-    except Exception as e:
-        print(f"[BG] Download error: {e}")
-        await tg_send(chat_id, f"❌ Xatolik: {e}")
-    finally:
-        if os.path.exists(output): os.remove(output)
-
-async def bg_shazam(chat_id, file_id):
+async def bg_shazam(chat_id):
     await tg_send(chat_id, "❌ Shazam vaqtincha ishlamaydi.")
-    # temp = f"temp/shz_{uuid.uuid4()}.mp3"
-    # wait_id = None
-    # try:
-    #     wait = await tg("sendMessage", chat_id=chat_id, text="🔍 Musiqa aniqlanmoqda...")
-    #     wait_id = wait.get("result", {}).get("message_id")
-    #     await tg_download(file_id, temp)
-    #     info = await mixer.identify_music(temp)
-    #     if info:
-    #         text = f"✅ Topildi!\n🎵 {info['title']}\n👤 {info['subtitle']}"
-    #     else:
-    #         text = "❌ Musiqa topilmadi."
-    #     await tg_send(chat_id, text)
-    #     except Exception as e:
-    #         await tg_send(chat_id, f"❌ Shazam xatosi: {e}")
-    #     finally:
-    #         if wait_id:
-    #             try: await tg("deleteMessage", chat_id=chat_id, message_id=wait_id)
-    #             except: pass
-    #         if os.path.exists(temp): os.remove(temp)
+
+async def bg_smm(chat_id, user_id, text, mode):
+    result = None
+    try:
+        response = await openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": SMM_PROMPTS[mode]},
+                {"role": "user", "content": text},
+            ],
+            max_tokens=5000,
+            temperature=0.8,
+        )
+        result = response.choices[0].message.content
+    except Exception as e:
+        logging.error(f"OpenAI xato: {e}")
+    if result is None:
+        await tg("sendMessage", chat_id=chat_id, text="❌ Xatolik yuz berdi. Qaytadan urinib ko'ring.", reply_markup=SMM_KB)
+    else:
+        db.update_balance(user_id, -1)
+        db.log_stats(user_id, mode)
+        remaining = db.get_balance(user_id)
+        if len(result) > 4000:
+            for part in [result[i:i+4000] for i in range(0, len(result), 4000)]:
+                await tg("sendMessage", chat_id=chat_id, text=part)
+        else:
+            await tg("sendMessage", chat_id=chat_id, text=result)
+        await tg("sendMessage", chat_id=chat_id, text=f"📊 Qolgan balans: {remaining} ta", reply_markup=SMM_KB)
 
 async def bg_clip(chat_id, photo_id, audio_id):
     p = f"temp/p_{uuid.uuid4()}.jpg"
@@ -243,36 +263,6 @@ async def bg_clip(chat_id, photo_id, audio_id):
             await tg_send_file("sendVideo", chat_id, v, "video")
         else:
             await tg_send(chat_id, "❌ Klip yaratishda xatolik.")
-    except Exception as e:
-        await tg_send(chat_id, f"❌ Xato: {e}")
-    finally:
-        if wait_id:
-            try: await tg("deleteMessage", chat_id=chat_id, message_id=wait_id)
-            except: pass
-        for f in [p, a, v]:
-            if os.path.exists(f): os.remove(f)
-
-async def bg_clip_from_url(chat_id, photo_id, url):
-    p = f"temp/p_{uuid.uuid4()}.jpg"
-    a = f"temp/a_{uuid.uuid4()}.mp3"
-    v = f"output/v_{uuid.uuid4()}.mp4"
-    wait_id = None
-    try:
-        wait = await tg("sendMessage", chat_id=chat_id, text="⏳ Musiqa yuklanmoqda...")
-        wait_id = wait.get("result", {}).get("message_id")
-        await tg_download(photo_id, p)
-        ok = await asyncio.wait_for(mixer.download_audio(url, a), timeout=60)
-        if not ok:
-            await tg_send(chat_id, "❌ Musiqa yuklab bo'lmadi.")
-            return
-        await tg("editMessageText", chat_id=chat_id, message_id=wait_id, text="🎬 Klip tayyorlanmoqda...")
-        wait_id = None
-        if await mixer.mix_image_audio(p, a, v):
-            await tg_send_file("sendVideo", chat_id, v, "video")
-        else:
-            await tg_send(chat_id, "❌ Klip yaratishda xatolik.")
-    except asyncio.TimeoutError:
-        await tg_send(chat_id, "⏰ Musiqa yuklanmadi (60s). Boshqa havola sinab ko'ring.")
     except Exception as e:
         await tg_send(chat_id, f"❌ Xato: {e}")
     finally:
@@ -444,6 +434,69 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
             "text": "✍️ Taklifingizni yozing."
         })
 
+    # ✍️ SMM Studio
+    if text == "✍️ SMM Studio":
+        return JSONResponse({
+            "method": "sendMessage", "chat_id": chat_id,
+            "text": "✍️ <b>SMM Studio</b>\n\nQaysi xizmatdan foydalanmoqchisiz?",
+            "parse_mode": "HTML", "reply_markup": SMM_KB
+        })
+
+    if text == "🔙 Orqaga":
+        set_state(user_id, None)
+        return JSONResponse({
+            "method": "sendMessage", "chat_id": chat_id,
+            "text": "Asosiy menyu:", "reply_markup": MAIN_KB
+        })
+
+    if text == "📝 Post yozish":
+        set_state(user_id, "smm_post")
+        return JSONResponse({
+            "method": "sendMessage", "chat_id": chat_id,
+            "text": "📝 Qaysi mavzuda post yozay?\n\n<i>Misol: Go'zallik saloni uchun aktsiya posti</i>",
+            "parse_mode": "HTML"
+        })
+
+    if text == "🎬 Reels ssenariy":
+        set_state(user_id, "smm_reels")
+        return JSONResponse({
+            "method": "sendMessage", "chat_id": chat_id,
+            "text": "🎬 Qanday mavzuda reels ssenariy yozay?\n\n<i>Misol: Kafe uchun 'bir kunim' formatida reels</i>",
+            "parse_mode": "HTML"
+        })
+
+    if text == "📅 Kontent plan":
+        set_state(user_id, "smm_plan")
+        return JSONResponse({
+            "method": "sendMessage", "chat_id": chat_id,
+            "text": "📅 Qaysi nisha uchun 30 kunlik plan tuzay?\n\n<i>Misol: Online kiyim do'koni</i>",
+            "parse_mode": "HTML"
+        })
+
+    if text == "#️⃣ Hashtag":
+        set_state(user_id, "smm_hashtag")
+        return JSONResponse({
+            "method": "sendMessage", "chat_id": chat_id,
+            "text": "#️⃣ Qaysi mavzu uchun hashtag kerak?\n\n<i>Misol: Fitness va sport ozuqa</i>",
+            "parse_mode": "HTML"
+        })
+
+    if text == "💬 Caption":
+        set_state(user_id, "smm_caption")
+        return JSONResponse({
+            "method": "sendMessage", "chat_id": chat_id,
+            "text": "💬 Rasm tavsifi yoki mavzuni yozing:\n\n<i>Misol: Yangi kolleksiya keldi, stilist fotosessiya</i>",
+            "parse_mode": "HTML"
+        })
+
+    if text == "📊 Strategiya":
+        set_state(user_id, "smm_strategy")
+        return JSONResponse({
+            "method": "sendMessage", "chat_id": chat_id,
+            "text": "📊 Biznes turingiz va maqsadingizni yozing:\n\n<i>Misol: Stomatologiya klinikasi, Instagram orqali mijoz jalb qilish</i>",
+            "parse_mode": "HTML"
+        })
+
     # --- STATE HANDLERS ---
 
     if state == "waiting_download" and text:
@@ -461,6 +514,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
                 if success:
                     file_url = f"{BASE_URL}/output/{filename}"
                     background_tasks.add_task(_cleanup_file, output, 120)
+                    db.log_stats(user_id, "download")
                     return JSONResponse({
                         "method": "sendVideo",
                         "chat_id": chat_id,
@@ -600,9 +654,8 @@ Chiqish formati (qat'iy):
         return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "⏳ CGI Artist ishlamoqda (30-60 soniya)..."})
 
     if state == "waiting_shazam" and (audio or video):
-        file_id = audio["file_id"] if audio else video["file_id"]
         set_state(user_id, None)
-        background_tasks.add_task(bg_shazam, chat_id, file_id)
+        background_tasks.add_task(bg_shazam, chat_id)
         return JSONResponse({"ok": True})
 
     if state == "waiting_clip_photo" and photo:
@@ -637,6 +690,7 @@ Chiqish formati (qat'iy):
                 return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "❌ Klip yaratishda xatolik."})
             file_url = f"{BASE_URL}/output/{os.path.basename(v)}"
             background_tasks.add_task(_cleanup_file, v, 300)
+            db.log_stats(user_id, "mix")
             return JSONResponse({"method": "sendVideo", "chat_id": chat_id, "video": file_url, "supports_streaming": True})
         except asyncio.TimeoutError:
             return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "⏰ Vaqt tugadi. Qisqaroq video sinab ko'ring."})
@@ -657,6 +711,29 @@ Chiqish formati (qat'iy):
             "text": "✅ Taklifingiz adminga yuborildi. Rahmat!"
         })
 
+    if state in ("smm_post", "smm_reels", "smm_plan", "smm_hashtag", "smm_caption", "smm_strategy") and text:
+        balance = db.get_balance(user_id)
+        if balance <= 0:
+            set_state(user_id, None)
+            return JSONResponse({
+                "method": "sendMessage", "chat_id": chat_id,
+                "text": "⚠️ Balansingiz tugagan!\n\n💰 To'ldirish uchun /start bosing va To'ldirish tugmasini tanlang.",
+                "reply_markup": MAIN_KB
+            })
+        if not openai_client:
+            set_state(user_id, None)
+            return JSONResponse({
+                "method": "sendMessage", "chat_id": chat_id,
+                "text": "❌ OpenAI API kalit sozlanmagan.", "reply_markup": SMM_KB
+            })
+        mode = state
+        set_state(user_id, None)
+        background_tasks.add_task(bg_smm, chat_id, user_id, text, mode)
+        return JSONResponse({
+            "method": "sendMessage", "chat_id": chat_id,
+            "text": "⏳ SMM AI ishlamoqda..."
+        })
+
     # Default
     return JSONResponse({
         "method": "sendMessage", "chat_id": chat_id,
@@ -674,7 +751,11 @@ async def read_root():
     }
 
 @app.get("/debug/state/{user_id}")
-async def debug_state(user_id: str):
+async def debug_state(user_id: str, x_api_key: Optional[str] = Header(None)):
+    if SADOON_API_KEY and x_api_key != SADOON_API_KEY:
+        raise HTTPException(403, detail="Forbidden")
+    if not SADOON_API_KEY and str(user_id) != str(ADMIN_ID):
+        raise HTTPException(403, detail="Forbidden")
     state, data = get_state(user_id)
     return {"user_id": user_id, "state": state, "data": data}
 
@@ -722,10 +803,14 @@ async def _register_webhook():
 @app.on_event("startup")
 async def on_startup():
     global BASE_URL
+    railway_host = os.getenv("RAILWAY_PUBLIC_DOMAIN")
     space_host = os.getenv("SPACE_HOST")
-    if space_host and BASE_URL == "http://localhost:7860":
+    if railway_host:
+        BASE_URL = f"https://{railway_host}"
+    elif space_host:
         BASE_URL = f"https://{space_host}"
     asyncio.create_task(_register_webhook())
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=7860)
+    port = int(os.getenv("PORT", 7860))
+    uvicorn.run(app, host="0.0.0.0", port=port)

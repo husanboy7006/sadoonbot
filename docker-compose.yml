@@ -1,0 +1,12 @@
+services:
+  sadoon-bot:
+    build: .
+    container_name: sadoon_ai
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "7860:7860"
+    volumes:
+      - ./temp:/app/temp
+      - ./output:/app/output

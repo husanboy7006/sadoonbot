@@ -10,3 +10,5 @@ instaloader
 python-multipart
 groq
 replicate
+openai
+python-dotenv

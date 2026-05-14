@@ -277,16 +277,4 @@ async def compress_video(input_path: str, output_path: str):
         return False
 
 async def identify_music(file_path: str):
-    print(f"[*] Shazam vaqtincha ishlamaydi: {file_path}")
     return None
-    # print(f"[*] Shazam identifying: {file_path}")
-    # try:
-    #     shazam = Shazam()
-    #     out = await shazam.recognize(file_path)
-    #     if not out.get('track'): return None
-    #     track = out['track']
-    #     return {"title": track.get('title'), "subtitle": track.get('subtitle'), "url": track.get('url'),
-    #             "image": track.get('images', {}).get('coverarthq'), "shazam_url": track.get('share', {}).get('href')}
-    # except Exception as e:
-    #     print(f"[!] Shazam error: {e}")
-    #     return None
