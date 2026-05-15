@@ -1,4 +1,6 @@
 import os
+import re
+import json
 import uuid
 import asyncio
 import logging
@@ -29,6 +31,7 @@ def apply_dns_patch():
 apply_dns_patch()
 
 # --- 2. FASTAPI ---
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Header, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -40,9 +43,22 @@ from openai import AsyncOpenAI
 from smm_prompts import post as smm_post, reels as smm_reels, plan as smm_plan
 from smm_prompts import hashtag as smm_hashtag, caption as smm_caption, strategy as smm_strategy
 logging.basicConfig(filename='server.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-app = FastAPI()
 
-app.add_middleware(CORSMiddleware, allow_origins=["https://huggingface.co"], allow_credentials=True,
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    global BASE_URL
+    railway_host = os.getenv("RAILWAY_PUBLIC_DOMAIN")
+    space_host = os.getenv("SPACE_HOST")
+    if railway_host:
+        BASE_URL = f"https://{railway_host}"
+    elif space_host:
+        BASE_URL = f"https://{space_host}"
+    asyncio.create_task(_register_webhook())
+    yield
+
+app = FastAPI(lifespan=lifespan)
+
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=False,
                    allow_methods=["*"], allow_headers=["*"])
 
 if not os.path.exists("output"): os.makedirs("output")
@@ -102,12 +118,54 @@ SMM_PROMPTS = {
     "smm_strategy": smm_strategy.SYSTEM_PROMPT,
 }
 
+SMM_FREE_DAILY = int(os.getenv("FREE_DAILY_LIMIT", "3"))
+SMM_MAX_TOKENS = int(os.getenv("MAX_TOKENS", "5000"))
+SMM_TEMPERATURE = float(os.getenv("TEMPERATURE", "0.8"))
+PAYMENT_ADMIN = os.getenv("PAYMENT_ADMIN", "@husanjon007")
+
+TILMOCH_SYSTEM = """Sen "Tilmoch AI" — O'zbek, Rus va Xitoy tillari o'rtasida professional darajadagi tezkor tarjimon.
+
+Qoidalar:
+- Hech qachon o'zingni tanishtirma, kirish gaplari yozma
+- Foydalanuvchi nima yuborsa darhol tarjimaga o't, ortiqcha gap yozma
+- Faqat tarjima bilan shug'ullan
+
+Til aniqlash:
+- O'zbek matni → Ruscha va Xitoycha tarjima qil
+- Ruscha matn → O'zbekcha tarjima qil
+- Xitoycha matn → O'zbekcha tarjima qil
+
+Chiqish formati (qat'iy):
+📝 Original: [asl matn]
+
+🇺🇿 O'zbekcha: [tarjima]
+
+🇷🇺 Ruscha:
+```
+[ruscha tarjima]
+```
+
+🇨🇳 Xitoycha:
+```
+[xitoycha tarjima]
+```
+🔤 Talaffuz: [pinyin ohanglar + o'zbekcha o'qilishi]
+
+💬 Namuna javoblar:
+1. [1-variant]
+2. [2-variant]"""
+PLAN_INFO = {
+    "starter": {"name": "⭐ Starter", "price": "29,000 so'm", "days": 30},
+    "pro":     {"name": "💎 Pro",     "price": "79,000 so'm", "days": 30},
+    "biznes":  {"name": "👑 Biznes",  "price": "149,000 so'm", "days": 30},
+}
+pending_payments: dict = {}
+
 # --- 6. KEYBOARD ---
 MAIN_KB = {
     "keyboard": [
         [{"text": "🆓 Bepul xizmatlar"}],
         [{"text": "💎 Pullik xizmatlar"}],
-        [{"text": "💎 Balans"}, {"text": "💰 To'ldirish"}],
         [{"text": "✍️ Takliflar"}]
     ],
     "resize_keyboard": True
@@ -126,7 +184,7 @@ FREE_KB = {
 PAID_KB = {
     "keyboard": [
         [{"text": "✍️ SMM Studio"}],
-        [{"text": "💎 Balans"}, {"text": "💰 To'ldirish"}],
+        [{"text": "💎 Premium olish"}, {"text": "📊 Mening limitim"}],
         [{"text": "🔙 Orqaga"}]
     ],
     "resize_keyboard": True
@@ -160,24 +218,6 @@ async def tg(method, **kwargs):
 async def tg_send(chat_id, text, **kwargs):
     await tg("sendMessage", chat_id=chat_id, text=text[:4000], **kwargs)
 
-async def tg_send_file(method, chat_id, path, field, **kwargs):
-    for attempt in range(3):
-        try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=120, connect=15)) as s:
-                with open(path, "rb") as f:
-                    data = aiohttp.FormData()
-                    data.add_field("chat_id", str(chat_id))
-                    data.add_field(field, f, filename=os.path.basename(path))
-                    for k, v in kwargs.items():
-                        data.add_field(k, str(v))
-                    async with s.post(f"{TG_API}/{method}", data=data) as r:
-                        return await r.json()
-        except Exception as e:
-            print(f"[TG] {method} file attempt {attempt+1} failed: {e}")
-            if attempt < 2:
-                await asyncio.sleep(3)
-    return {}
-
 async def tg_download(file_id, save_path):
     async with aiohttp.ClientSession(timeout=_TG_TIMEOUT) as s:
         async with s.get(f"{TG_API}/getFile?file_id={file_id}") as r:
@@ -198,10 +238,20 @@ async def bg_shazam(chat_id):
     await tg_send(chat_id, "❌ Shazam vaqtincha ishlamaydi.")
 
 async def bg_smm(chat_id, user_id, text, mode):
-    balance = db.get_balance(user_id)
-    if balance <= 0:
-        await tg("sendMessage", chat_id=chat_id, text="⚠️ Balansingiz tugagan!\n\n💰 To'ldirish uchun admin bilan bog'laning: @husanjon007", reply_markup=MAIN_KB)
-        return
+    if not db.is_premium(user_id):
+        used = db.get_daily_smm(user_id)
+        if used >= SMM_FREE_DAILY:
+            keyboard = {"inline_keyboard": [
+                [{"text": "⭐ Starter — 29,000 so'm/oy", "callback_data": "pay_starter"}],
+                [{"text": "💎 Pro — 79,000 so'm/oy",     "callback_data": "pay_pro"}],
+                [{"text": "👑 Biznes — 149,000 so'm/oy", "callback_data": "pay_biznes"}],
+            ]}
+            await tg("sendMessage", chat_id=chat_id, text=(
+                f"⚠️ <b>Kunlik limit tugadi!</b>\n\n"
+                f"📝 Bugun {SMM_FREE_DAILY}/{SMM_FREE_DAILY} ta bepul so'rov ishlatildi.\n\n"
+                f"💎 Cheksiz ishlash uchun Premium oling:"
+            ), parse_mode="HTML", reply_markup=keyboard)
+            return
     result = None
     try:
         response = await openai_client.chat.completions.create(
@@ -210,8 +260,8 @@ async def bg_smm(chat_id, user_id, text, mode):
                 {"role": "system", "content": SMM_PROMPTS[mode]},
                 {"role": "user", "content": text},
             ],
-            max_tokens=5000,
-            temperature=0.8,
+            max_tokens=SMM_MAX_TOKENS,
+            temperature=SMM_TEMPERATURE,
         )
         result = response.choices[0].message.content
     except Exception as e:
@@ -219,23 +269,112 @@ async def bg_smm(chat_id, user_id, text, mode):
     if result is None:
         await tg("sendMessage", chat_id=chat_id, text="❌ Xatolik yuz berdi. Qaytadan urinib ko'ring.", reply_markup=SMM_KB)
     else:
-        db.update_balance(user_id, -1)
+        used = db.increment_daily_smm(user_id)
         db.log_stats(user_id, mode)
-        remaining = db.get_balance(user_id)
         if len(result) > 4000:
             for part in [result[i:i+4000] for i in range(0, len(result), 4000)]:
                 await tg("sendMessage", chat_id=chat_id, text=part)
         else:
             await tg("sendMessage", chat_id=chat_id, text=result)
-        await tg("sendMessage", chat_id=chat_id, text=f"📊 Qolgan balans: {remaining} ta", reply_markup=SMM_KB)
+        if not db.is_premium(user_id):
+            remaining = max(0, SMM_FREE_DAILY - used)
+            footer = f"📊 Qolgan bepul so'rovlar: {remaining}/{SMM_FREE_DAILY}"
+        else:
+            footer = "💎 Premium — Cheksiz so'rovlar ♾️"
+        await tg("sendMessage", chat_id=chat_id, text=footer, reply_markup=SMM_KB)
 
 # --- 9. WEBHOOK HANDLER ---
+async def handle_callback_query(query: dict):
+    cq_id = query["id"]
+    data = query.get("data", "")
+    from_id = query["from"]["id"]
+    chat_id = query["message"]["chat"]["id"]
+    msg_id = query["message"]["message_id"]
+
+    # Tarif tanlash — foydalanuvchi
+    if data.startswith("pay_"):
+        await tg("answerCallbackQuery", callback_query_id=cq_id)
+        plan = data.replace("pay_", "")
+        if plan not in PLAN_INFO:
+            return JSONResponse({"ok": True})
+        info = PLAN_INFO[plan]
+        db.set_state(str(from_id), f"waiting_payment_{plan}")
+        await tg("sendMessage", chat_id=chat_id, text=(
+            f"💰 <b>To'lov ko'rsatmasi</b>\n\n"
+            f"📌 Tarif: {info['name']}\n"
+            f"💵 Narx: {info['price']}\n"
+            f"📅 Muddat: {info['days']} kun\n\n"
+            f"1️⃣ {PAYMENT_ADMIN} ga yozing\n"
+            f"2️⃣ Tarif nomini ayting: <b>{info['name']}</b>\n"
+            f"3️⃣ To'lovni amalga oshiring\n"
+            f"4️⃣ To'lov chekini (screenshot) <b>shu botga</b> yuboring\n\n"
+            f"⏳ Admin tekshirib, premium faollashtiriladi.\n"
+            f"❌ Bekor qilish: /start"
+        ), parse_mode="HTML")
+        return JSONResponse({"ok": True})
+
+    # Admin tasdiqlash
+    if data.startswith("approve_"):
+        if from_id != ADMIN_ID:
+            await tg("answerCallbackQuery", callback_query_id=cq_id, text="⛔ Ruxsat yo'q.", show_alert=True)
+            return JSONResponse({"ok": True})
+        await tg("answerCallbackQuery", callback_query_id=cq_id)
+        _, uid, days = data.split("_")
+        uid, days = int(uid), int(days)
+        until = db.activate_premium(str(uid), days)
+        old_caption = query["message"].get("caption", "")
+        await tg("editMessageCaption", chat_id=chat_id, message_id=msg_id,
+                 caption=old_caption + f"\n\n✅ Tasdiqlandi! {until} gacha", parse_mode="HTML")
+        _, sdata = db.get_state(str(uid))
+        user_chat = None
+        if sdata:
+            try: user_chat = json.loads(sdata).get("chat_id")
+            except: pass
+        if not user_chat and uid in pending_payments:
+            user_chat = pending_payments.pop(uid)["chat_id"]
+        if user_chat:
+            await tg("sendMessage", chat_id=user_chat, text=(
+                f"🎉 <b>Premium faollashtirildi!</b>\n\n"
+                f"📅 {until} gacha amal qiladi\n"
+                f"✅ Cheksiz SMM so'rovlardan foydalaning!\n\n/start"
+            ), parse_mode="HTML")
+        return JSONResponse({"ok": True})
+
+    # Admin rad etish
+    if data.startswith("reject_"):
+        if from_id != ADMIN_ID:
+            await tg("answerCallbackQuery", callback_query_id=cq_id, text="⛔ Ruxsat yo'q.", show_alert=True)
+            return JSONResponse({"ok": True})
+        await tg("answerCallbackQuery", callback_query_id=cq_id)
+        uid = int(data.split("_")[1])
+        old_caption = query["message"].get("caption", "")
+        await tg("editMessageCaption", chat_id=chat_id, message_id=msg_id,
+                 caption=old_caption + "\n\n❌ Rad etildi.", parse_mode="HTML")
+        _, sdata = db.get_state(str(uid))
+        user_chat = None
+        if sdata:
+            try: user_chat = json.loads(sdata).get("chat_id")
+            except: pass
+        if not user_chat and uid in pending_payments:
+            user_chat = pending_payments.pop(uid)["chat_id"]
+        if user_chat:
+            await tg("sendMessage", chat_id=user_chat,
+                     text=f"❌ To'lovingiz tasdiqlanmadi.\n\nSavol bo'lsa: {PAYMENT_ADMIN}")
+        return JSONResponse({"ok": True})
+
+    await tg("answerCallbackQuery", callback_query_id=cq_id)
+    return JSONResponse({"ok": True})
+
+
 @app.post("/webhook/bot")
 async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
     try:
         data = await request.json()
     except:
         return JSONResponse({"ok": True})
+
+    if "callback_query" in data:
+        return await handle_callback_query(data["callback_query"])
 
     if "message" not in data:
         return JSONResponse({"ok": True})
@@ -247,17 +386,29 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
     text = msg.get("text", "")
     photo = msg.get("photo")
     audio = msg.get("audio") or msg.get("voice")
-    video = msg.get("video")
 
     state, state_data = db.get_state(user_id)
     print(f"[*] from={user_id} state={state} text={text[:30] if text else ''}")
 
     # /stats — barcha foydalanuvchilar uchun (o'z hisobi)
     if text == "/stats":
-        balance = db.get_balance(user_id)
+        used = db.get_daily_smm(user_id)
+        prem = db.is_premium(user_id)
+        if prem:
+            until = db.get_user_metadata(user_id).get("premium_until", "")
+            status = f"💎 Premium ({until} gacha)"
+            limit_text = "Cheksiz ♾️"
+        else:
+            status = "🆓 Free"
+            limit_text = f"{used}/{SMM_FREE_DAILY} ta ishlatildi"
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
-            "text": f"📊 <b>Sizning hisobingiz</b>\n\n💎 Balans: <b>{balance} ta</b>\n🆔 ID: <code>{user_id}</code>\n\n💰 To'ldirish: @husanjon007",
+            "text": (
+                f"📊 <b>Sizning hisobingiz</b>\n\n"
+                f"👤 Tarif: {status}\n"
+                f"📝 SMM bugun: {limit_text}\n"
+                f"🆔 ID: <code>{user_id}</code>"
+            ),
             "parse_mode": "HTML"
         })
 
@@ -279,21 +430,48 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
             "reply_markup": MAIN_KB
         })
 
-    # 💎 Balans
-    if text == "💎 Balans":
-        balance = db.get_balance(user_id)
+    # 📊 Mening limitim
+    if text == "📊 Mening limitim":
+        used = db.get_daily_smm(user_id)
+        prem = db.is_premium(user_id)
+        if prem:
+            until = db.get_user_metadata(user_id).get("premium_until", "")
+            return JSONResponse({
+                "method": "sendMessage", "chat_id": chat_id,
+                "text": f"💎 <b>Premium aktiv</b>\n\n📅 {until} gacha\n✅ Cheksiz SMM so'rovlar",
+                "parse_mode": "HTML", "reply_markup": PAID_KB
+            })
+        remaining = max(0, SMM_FREE_DAILY - used)
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
-            "text": f"💎 Balansingiz: {balance} somoniy.\n🆔 ID: `{user_id}`",
-            "parse_mode": "Markdown"
+            "text": (
+                f"📊 <b>Kunlik limitingiz</b>\n\n"
+                f"📝 SMM bugun: {used}/{SMM_FREE_DAILY} ta\n"
+                f"🆓 Qoldi: {remaining} ta\n\n"
+                f"💎 Cheksiz ishlash uchun Premium oling!"
+            ),
+            "parse_mode": "HTML", "reply_markup": PAID_KB
         })
 
-    # 💰 To'ldirish
-    if text == "💰 To'ldirish":
+    # 💎 Premium olish
+    if text == "💎 Premium olish":
+        keyboard = {"inline_keyboard": [
+            [{"text": "⭐ Starter — 29,000 so'm/oy", "callback_data": "pay_starter"}],
+            [{"text": "💎 Pro — 79,000 so'm/oy",     "callback_data": "pay_pro"}],
+            [{"text": "👑 Biznes — 149,000 so'm/oy", "callback_data": "pay_biznes"}],
+        ]}
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
-            "text": f"💰 To'ldirish uchun admin bilan bog'laning:\n👤 @husanjon007\n🆔 Sizning ID: `{user_id}`",
-            "parse_mode": "Markdown"
+            "text": (
+                f"💎 <b>Premium Rejim</b>\n\n"
+                f"✅ Cheksiz SMM so'rovlar (kunlik limitsiz)\n\n"
+                f"💰 <b>Tariflar (1 oy):</b>\n"
+                f"⭐ Starter: 29,000 so'm\n"
+                f"💎 Pro: 79,000 so'm\n"
+                f"👑 Biznes: 149,000 so'm\n\n"
+                f"Tarif tanlang 👇"
+            ),
+            "parse_mode": "HTML", "reply_markup": keyboard
         })
 
     # 🆓 Bepul xizmatlar
@@ -306,10 +484,17 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
 
     # 💎 Pullik xizmatlar
     if text == "💎 Pullik xizmatlar":
-        balance = db.get_balance(user_id)
+        used = db.get_daily_smm(user_id)
+        prem = db.is_premium(user_id)
+        if prem:
+            until = db.get_user_metadata(user_id).get("premium_until", "")
+            info = f"💎 Premium aktiv ({until} gacha) — Cheksiz ♾️"
+        else:
+            remaining = max(0, SMM_FREE_DAILY - used)
+            info = f"🆓 Bugun qoldi: {remaining}/{SMM_FREE_DAILY} ta bepul so'rov"
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
-            "text": f"💎 <b>Pullik xizmatlar</b>\n\n💰 Balansingiz: {balance} ta\n\nBitta tanlang:",
+            "text": f"💎 <b>Pullik xizmatlar</b>\n\n{info}\n\nBitta tanlang:",
             "parse_mode": "HTML", "reply_markup": PAID_KB
         })
 
@@ -331,10 +516,10 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
 
     # 🔍 Shazam
     if text == "🔍 Shazam":
-        db.set_state(user_id, "waiting_shazam")
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
-            "text": "🎧 Audio, ovozli xabar yoki video yuboring."
+            "text": "❌ Shazam vaqtincha ishlamaydi. Tez orada yoqiladi!",
+            "reply_markup": FREE_KB
         })
 
     # 🎬 Klip Yaratish
@@ -420,7 +605,6 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
     # --- STATE HANDLERS ---
 
     if state == "waiting_download" and text:
-        import re
         urls = re.findall(r'https?://[^\s]+', text)
         if urls:
             db.set_state(user_id, None)
@@ -466,37 +650,6 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
     if state == "waiting_translate" and text:
         db.set_state(user_id, None)
         result = None
-        TILMOCH_SYSTEM = """Sen "Tilmoch AI" — O'zbek, Rus va Xitoy tillari o'rtasida professional darajadagi tezkor tarjimon.
-
-Qoidalar:
-- Hech qachon o'zingni tanishtirma, kirish gaplari yozma
-- Foydalanuvchi nima yuborsa darhol tarjimaga o't, ortiqcha gap yozma
-- Faqat tarjima bilan shug'ullan
-
-Til aniqlash:
-- O'zbek matni → Ruscha va Xitoycha tarjima qil
-- Ruscha matn → O'zbekcha tarjima qil
-- Xitoycha matn → O'zbekcha tarjima qil
-
-Chiqish formati (qat'iy):
-📝 Original: [asl matn]
-
-🇺🇿 O'zbekcha: [tarjima]
-
-🇷🇺 Ruscha:
-```
-[ruscha tarjima]
-```
-
-🇨🇳 Xitoycha:
-```
-[xitoycha tarjima]
-```
-🔤 Talaffuz: [pinyin ohanglar + o'zbekcha o'qilishi]
-
-💬 Namuna javoblar:
-1. [1-variant]
-2. [2-variant]"""
         # 1. Groq bilan urinib ko'r (asosiy)
         if groq_client and not result:
             try:
@@ -551,10 +704,44 @@ Chiqish formati (qat'iy):
         db.log_stats(user_id, "translate")
         return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": result})
 
-    if state == "waiting_shazam" and (audio or video):
-        db.set_state(user_id, None)
-        background_tasks.add_task(bg_shazam, chat_id)
-        return JSONResponse({"ok": True})
+    if state and state.startswith("waiting_payment_") and text and not photo:
+        plan = state.replace("waiting_payment_", "")
+        info = PLAN_INFO.get(plan, {})
+        return JSONResponse({
+            "method": "sendMessage", "chat_id": chat_id,
+            "text": (
+                f"📸 Iltimos, to'lov chekining <b>screenshot</b>ini yuboring.\n\n"
+                f"📌 Tarif: {info.get('name', '')}\n"
+                f"❌ Bekor qilish: /start"
+            ),
+            "parse_mode": "HTML"
+        })
+
+    if state and state.startswith("waiting_payment_") and photo:
+        plan = state.replace("waiting_payment_", "")
+        if plan not in PLAN_INFO:
+            return JSONResponse({"ok": True})
+        info = PLAN_INFO[plan]
+        db.set_state(user_id, "pending_payment", json.dumps({"plan": plan, "chat_id": chat_id}))
+        pending_payments[int(user_id)] = {"plan": plan, "chat_id": chat_id}
+        keyboard = {"inline_keyboard": [[
+            {"text": f"✅ {info['days']} kun Premium", "callback_data": f"approve_{user_id}_{info['days']}"},
+            {"text": "❌ Rad etish", "callback_data": f"reject_{user_id}"},
+        ]]}
+        await tg("sendPhoto", chat_id=ADMIN_ID,
+                 photo=photo[-1]["file_id"],
+                 caption=(
+                     f"💳 <b>To'lov so'rovi</b>\n\n"
+                     f"👤 {first_name}\n"
+                     f"🆔 ID: <code>{user_id}</code>\n"
+                     f"📌 Tarif: {info['name']}\n"
+                     f"💵 Narx: {info['price']}"
+                 ),
+                 parse_mode="HTML", reply_markup=keyboard)
+        return JSONResponse({
+            "method": "sendMessage", "chat_id": chat_id,
+            "text": "✅ Chekingiz adminga yuborildi!\n⏳ Tez orada premium faollashtiriladi."
+        })
 
     if state == "waiting_clip_photo" and photo:
         photo_id = photo[-1]["file_id"]
@@ -610,14 +797,24 @@ Chiqish formati (qat'iy):
         })
 
     if state in ("smm_post", "smm_reels", "smm_plan", "smm_hashtag", "smm_caption", "smm_strategy") and text:
-        balance = db.get_balance(user_id)
-        if balance <= 0:
-            db.set_state(user_id, None)
-            return JSONResponse({
-                "method": "sendMessage", "chat_id": chat_id,
-                "text": "⚠️ Balansingiz tugagan!\n\n💰 To'ldirish uchun /start bosing va To'ldirish tugmasini tanlang.",
-                "reply_markup": MAIN_KB
-            })
+        if not db.is_premium(user_id):
+            used = db.get_daily_smm(user_id)
+            if used >= SMM_FREE_DAILY:
+                db.set_state(user_id, None)
+                keyboard = {"inline_keyboard": [
+                    [{"text": "⭐ Starter — 29,000 so'm/oy", "callback_data": "pay_starter"}],
+                    [{"text": "💎 Pro — 79,000 so'm/oy",     "callback_data": "pay_pro"}],
+                    [{"text": "👑 Biznes — 149,000 so'm/oy", "callback_data": "pay_biznes"}],
+                ]}
+                return JSONResponse({
+                    "method": "sendMessage", "chat_id": chat_id,
+                    "text": (
+                        f"⚠️ <b>Kunlik limit tugadi!</b>\n\n"
+                        f"📝 Bugun {SMM_FREE_DAILY}/{SMM_FREE_DAILY} ta bepul so'rov ishlatildi.\n\n"
+                        f"💎 Cheksiz ishlash uchun Premium oling:"
+                    ),
+                    "parse_mode": "HTML", "reply_markup": keyboard
+                })
         if not openai_client:
             db.set_state(user_id, None)
             return JSONResponse({
@@ -697,17 +894,6 @@ async def _register_webhook():
             if attempt < 4:
                 await asyncio.sleep(10)
     print("[!] Webhook ro'yxatdan o'tmadi!")
-
-@app.on_event("startup")
-async def on_startup():
-    global BASE_URL
-    railway_host = os.getenv("RAILWAY_PUBLIC_DOMAIN")
-    space_host = os.getenv("SPACE_HOST")
-    if railway_host:
-        BASE_URL = f"https://{railway_host}"
-    elif space_host:
-        BASE_URL = f"https://{space_host}"
-    asyncio.create_task(_register_webhook())
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 7860))

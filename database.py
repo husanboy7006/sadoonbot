@@ -17,42 +17,6 @@ class Database:
             except Exception as e:
                 print(f"❌ Supabase ulanish xatosi: {e}")
 
-    def get_balance(self, user_id):
-        if not self.supabase: return 0
-        try:
-            res = self.supabase.table("users").select("balance").eq("user_id", str(user_id)).execute()
-            if res.data:
-                data = res.data[0]
-                return data.get("balance", 0)
-        except Exception as e:
-            print(f"Error getting balance: {e}")
-        return 0
-
-    def update_balance(self, user_id, amount):
-        if not self.supabase: return False
-        try:
-            res = self.supabase.table("users").select("balance").eq("user_id", str(user_id)).execute()
-            if not res.data:
-                print(f"update_balance: user {user_id} not found")
-                return False
-            current = res.data[0].get("balance", 0)
-            new_balance = current + amount
-            if new_balance < 0: return False
-            self.supabase.table("users").update({"balance": new_balance}).eq("user_id", str(user_id)).execute()
-            return True
-        except Exception as e:
-            print(f"Error updating balance: {e}")
-            return False
-
-    def set_balance(self, user_id, amount):
-        if not self.supabase: return False
-        try:
-            self.supabase.table("users").update({"balance": amount}).eq("user_id", user_id).execute()
-            return True
-        except Exception as e:
-            print(f"Error setting balance: {e}")
-            return False
-
     def add_user(self, user_id, username):
         if not self.supabase: return
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -63,7 +27,7 @@ class Database:
                     "user_id": str(user_id),
                     "username": username,
                     "join_date": now,
-                    "balance": 1,
+                    "balance": 0,
                     "metadata": {}
                 }).execute()
         except Exception as e:
@@ -109,6 +73,40 @@ class Database:
                 "timestamp": now
             }).execute()
         except: pass
+
+    def is_premium(self, user_id):
+        try:
+            from datetime import date
+            meta = self.get_user_metadata(user_id)
+            until = meta.get("premium_until", "")
+            return bool(until) and until >= str(date.today())
+        except:
+            return False
+
+    def activate_premium(self, user_id, days):
+        from datetime import date, timedelta
+        until = str(date.today() + timedelta(days=days))
+        self.update_user_metadata(user_id, {"premium_until": until})
+        return until
+
+    def get_daily_smm(self, user_id):
+        from datetime import date
+        today = str(date.today())
+        meta = self.get_user_metadata(user_id)
+        if meta.get("smm_date") != today:
+            return 0
+        return meta.get("smm_count", 0)
+
+    def increment_daily_smm(self, user_id):
+        from datetime import date
+        today = str(date.today())
+        meta = self.get_user_metadata(user_id)
+        if meta.get("smm_date") != today:
+            meta["smm_date"] = today
+            meta["smm_count"] = 0
+        meta["smm_count"] = meta.get("smm_count", 0) + 1
+        self.update_user_metadata(user_id, meta)
+        return meta["smm_count"]
 
     def get_state(self, user_id):
         if not self.supabase:
@@ -161,10 +159,10 @@ class Database:
             except: pass
             
             # Hisoblash uchun lug'atlar
-            total_bd = {"mix": 0, "shazam": 0, "download": 0, "cgi": 0, "translate": 0,
+            total_bd = {"mix": 0, "shazam": 0, "download": 0, "translate": 0,
                         "smm_post": 0, "smm_reels": 0, "smm_plan": 0,
                         "smm_hashtag": 0, "smm_caption": 0, "smm_strategy": 0}
-            today_bd = {"mix": 0, "shazam": 0, "download": 0, "cgi": 0, "translate": 0,
+            today_bd = {"mix": 0, "shazam": 0, "download": 0, "translate": 0,
                         "smm_post": 0, "smm_reels": 0, "smm_plan": 0,
                         "smm_hashtag": 0, "smm_caption": 0, "smm_strategy": 0}
             
@@ -188,15 +186,13 @@ class Database:
             smm_total = sum(total_bd[k] for k in ("smm_post", "smm_reels", "smm_plan", "smm_hashtag", "smm_caption", "smm_strategy"))
             report += f"📅 <b>BUGUNGI AKTIVLIK:</b>\n"
             report += f"├─ 🎬 Klip yasash: {today_bd['mix']}\n"
-            report += f"├─ 🔍 Musiqa topish: {today_bd['shazam']}\n"
-            report += f"├─ 🚀 CGI Artist: {today_bd['cgi']}\n"
+            report += f"├─ 🔍 Shazam: {today_bd['shazam']}\n"
             report += f"├─ 📥 Yuklab olish: {today_bd['download']}\n"
             report += f"├─ 🌐 Tarjima: {today_bd['translate']}\n"
             report += f"└─ ✍️ SMM Studio: {smm_today}\n\n"
             report += f"🚀 <b>UMUMIY AKTIVLIK:</b>\n"
             report += f"├─ 🎬 Klip yasash: {total_bd['mix']}\n"
-            report += f"├─ 🔍 Musiqa topish: {total_bd['shazam']}\n"
-            report += f"├─ 🚀 CGI Artist: {total_bd['cgi']}\n"
+            report += f"├─ 🔍 Shazam: {total_bd['shazam']}\n"
             report += f"├─ 📥 Yuklab olish: {total_bd['download']}\n"
             report += f"├─ 🌐 Tarjima: {total_bd['translate']}\n"
             report += f"└─ ✍️ SMM Studio: {smm_total}\n\n"
