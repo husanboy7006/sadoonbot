@@ -237,6 +237,28 @@ async def _cleanup_file(path, delay=60):
 async def bg_shazam(chat_id):
     await tg_send(chat_id, "❌ Shazam vaqtincha ishlamaydi.")
 
+async def bg_download(chat_id, user_id, url):
+    filename = f"v_{uuid.uuid4()}.mp4"
+    output = f"output/{filename}"
+    try:
+        success = await asyncio.wait_for(
+            mixer.download_video(url, output), timeout=55
+        )
+        if success:
+            file_url = f"{BASE_URL}/output/{filename}"
+            db.log_stats(user_id, "download")
+            await tg("sendVideo", chat_id=chat_id, video=file_url, supports_streaming=True)
+            asyncio.create_task(_cleanup_file(output, 120))
+            return
+        if os.path.exists(output): os.remove(output)
+        await tg_send(chat_id, "❌ Yuklab bo'lmadi. TikTok yoki YouTube havolasini sinab ko'ring.")
+    except (asyncio.TimeoutError, asyncio.CancelledError):
+        if os.path.exists(output): os.remove(output)
+        await tg_send(chat_id, "⏰ 55 soniya ichida yuklanmadi. Video juda katta yoki sayt bloklangan.")
+    except Exception as e:
+        if os.path.exists(output): os.remove(output)
+        await tg_send(chat_id, f"❌ Xatolik: {str(e)[:200]}")
+
 async def bg_broadcast(admin_chat_id, msg: dict):
     users = db.get_all_users()
     total = len(users)
@@ -667,39 +689,11 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         if urls:
             db.set_state(user_id, None)
             url = urls[0].strip('.,()!?')
-            filename = f"v_{uuid.uuid4()}.mp4"
-            output = f"output/{filename}"
-            try:
-                success = await asyncio.wait_for(
-                    mixer.download_video(url, output), timeout=55
-                )
-                if success:
-                    file_url = f"{BASE_URL}/output/{filename}"
-                    background_tasks.add_task(_cleanup_file, output, 120)
-                    db.log_stats(user_id, "download")
-                    return JSONResponse({
-                        "method": "sendVideo",
-                        "chat_id": chat_id,
-                        "video": file_url,
-                        "supports_streaming": True
-                    })
-                if os.path.exists(output): os.remove(output)
-                return JSONResponse({
-                    "method": "sendMessage", "chat_id": chat_id,
-                    "text": "❌ Yuklab bo'lmadi. TikTok yoki YouTube havolasini sinab ko'ring."
-                })
-            except asyncio.TimeoutError:
-                if os.path.exists(output): os.remove(output)
-                return JSONResponse({
-                    "method": "sendMessage", "chat_id": chat_id,
-                    "text": "⏰ 55 soniya ichida yuklanmadi. Video juda katta yoki sayt bloklanган."
-                })
-            except Exception as e:
-                if os.path.exists(output): os.remove(output)
-                return JSONResponse({
-                    "method": "sendMessage", "chat_id": chat_id,
-                    "text": f"❌ Xatolik: {str(e)[:200]}"
-                })
+            background_tasks.add_task(bg_download, chat_id, user_id, url)
+            return JSONResponse({
+                "method": "sendMessage", "chat_id": chat_id,
+                "text": "⏳ Video yuklanmoqda, biroz kuting...\n\n(Instagram uchun 30-40 soniya kerak bo'lishi mumkin)"
+            })
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
             "text": "❌ Havola topilmadi. Iltimos, to'g'ri URL yuboring."
