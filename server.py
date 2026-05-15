@@ -814,7 +814,6 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
             if audio:
                 await tg_download(audio["file_id"], a)
             elif text:
-                import re
                 urls = re.findall(r'https?://[^\s]+', text)
                 if not urls:
                     return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "❌ Audio fayl yoki havola yuboring."})
