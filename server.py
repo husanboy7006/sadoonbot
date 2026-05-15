@@ -249,29 +249,6 @@ async def bg_smm(chat_id, user_id, text, mode):
             await tg("sendMessage", chat_id=chat_id, text=result)
         await tg("sendMessage", chat_id=chat_id, text=f"📊 Qolgan balans: {remaining} ta", reply_markup=SMM_KB)
 
-async def bg_clip(chat_id, photo_id, audio_id):
-    p = f"temp/p_{uuid.uuid4()}.jpg"
-    a = f"temp/a_{uuid.uuid4()}.mp3"
-    v = f"output/v_{uuid.uuid4()}.mp4"
-    wait_id = None
-    try:
-        wait = await tg("sendMessage", chat_id=chat_id, text="🎬 Klip tayyorlanmoqda...")
-        wait_id = wait.get("result", {}).get("message_id")
-        await tg_download(photo_id, p)
-        await tg_download(audio_id, a)
-        if await mixer.mix_image_audio(p, a, v):
-            await tg_send_file("sendVideo", chat_id, v, "video")
-        else:
-            await tg_send(chat_id, "❌ Klip yaratishda xatolik.")
-    except Exception as e:
-        await tg_send(chat_id, f"❌ Xato: {e}")
-    finally:
-        if wait_id:
-            try: await tg("deleteMessage", chat_id=chat_id, message_id=wait_id)
-            except: pass
-        for f in [p, a, v]:
-            if os.path.exists(f): os.remove(f)
-
 CGI_PROMPT = """You are a world-class CGI Product Visualization Director and advertising creative director.
 TASK: Take this product and create a HIGH-END, cinematic advertising image.
 - Professional studio lighting with dramatic shadows
@@ -322,19 +299,6 @@ async def bg_cgi(chat_id, photo_id, vibe, plat):
             except: pass
         if os.path.exists(p): os.remove(p)
 
-async def bg_translate(chat_id, text):
-    try:
-        if not ai_client:
-            await tg_send(chat_id, "❌ AI sozlanmagan (GEMINI_KEY yo'q).")
-            return
-        response = await ai_client.aio.models.generate_content(
-            model="gemini-2.0-flash-lite",
-            contents=f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {text}"
-        )
-        await tg_send(chat_id, response.text)
-    except Exception as e:
-        await tg_send(chat_id, f"❌ AI xatolik: {e}")
-
 # --- 9. WEBHOOK HANDLER ---
 @app.post("/webhook/bot")
 async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
@@ -357,6 +321,13 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
 
     state, state_data = get_state(user_id)
     print(f"[*] from={user_id} state={state} text={text[:30] if text else ''}")
+
+    # /stats (faqat admin)
+    if text == "/stats":
+        if int(user_id) != ADMIN_ID:
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "⛔ Ruxsat yo'q."})
+        report = db.get_stats_report()
+        return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": report, "parse_mode": "HTML"})
 
     # /start
     if text == "/start":
@@ -608,26 +579,27 @@ Chiqish formati (qat'iy):
                 result = response.text[:4000]
             except Exception as e:
                 print(f"[!] Tilmoch Gemini xato: {e}")
-        # 2. Fallback: MyMemory (bepul, kalitsiz)
+        # 3. Fallback: MyMemory (bepul, kalitsiz)
         if not result:
             try:
-                import urllib.parse
-                q = urllib.parse.quote(text[:500])
+                import urllib.parse as _up
+                q = _up.quote(text[:500])
                 async with aiohttp.ClientSession() as s:
                     async with s.get(
-                        f"https://api.mymemory.translated.net/get?q={q}&langpair=ru|uz",
+                        f"https://api.mymemory.translated.net/get?q={q}&langpair=auto|uz",
                         timeout=aiohttp.ClientTimeout(total=10)
                     ) as r:
-                        data = await r.json()
-                        if data.get("responseStatus") == 200:
-                            t = data["responseData"]["translatedText"]
-                            result = f"🌐 Tarjima (O'zbekcha):\n{t}"
+                        mdata = await r.json()
+                        if mdata.get("responseStatus") == 200:
+                            t = mdata["responseData"]["translatedText"]
+                            result = f"🌐 Tarjima:\n{t}"
                         else:
-                            print(f"[!] MyMemory xato: {data}")
+                            print(f"[!] MyMemory xato: {mdata}")
             except Exception as e:
                 print(f"[!] MyMemory fallback xato: {e}")
         if not result:
             return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "❌ Tarjima qilib bo'lmadi. Keyinroq urinib ko'ring."})
+        db.log_stats(user_id, "translate")
         return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": result})
 
     if state == "waiting_cgi_photo" and photo:
@@ -697,7 +669,7 @@ Chiqish formati (qat'iy):
         except Exception as e:
             return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": f"❌ Xato: {str(e)[:200]}"})
         finally:
-            for f in [p, a]:
+            for f in [p, a, v]:
                 if os.path.exists(f): os.remove(f)
 
     if state == "waiting_feedback" and text:

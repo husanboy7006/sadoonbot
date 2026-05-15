@@ -88,7 +88,6 @@ smm_keyboard = types.ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-# --- PROMPTS ---
 # --- HANDLERS ---
 @dp.message(Command("start"))
 async def start(message: Message):
@@ -176,11 +175,14 @@ async def handle_download(message: Message, state: FSMContext):
     wait_msg = await message.answer("⏳ Yuklanmoqda...")
     output = f"temp/v_{uuid.uuid4()}.mp4"
     try:
-        if await mixer.download_video(url, output):
+        success = await asyncio.wait_for(mixer.download_video(url, output), timeout=55)
+        if success:
             await message.answer_video(video=FSInputFile(output))
             db.log_stats(message.from_user.id, "download")
         else:
             await message.answer("❌ Yuklab bo'lmadi.")
+    except asyncio.TimeoutError:
+        await message.answer("⏰ 55 soniya ichida yuklanmadi. Havola juda katta yoki bloklanган.")
     except Exception as e:
         await message.answer(f"❌ Xatolik: {e}")
     finally:
@@ -189,7 +191,7 @@ async def handle_download(message: Message, state: FSMContext):
         await state.clear()
 
 @dp.message(F.text == "🔍 Shazam")
-async def shazam_start(message: Message, state: FSMContext):
+async def shazam_start(message: Message):
     await message.answer("❌ Shazam vaqtincha ishlamaydi (paket muammosi).")
 
 @dp.message(MixState.waiting_shazam, F.audio | F.voice | F.video)
@@ -220,9 +222,13 @@ async def handle_clip_audio(message: Message, state: FSMContext):
         await bot.download_file(pfile.file_path, p_path)
         afile = await bot.get_file(message.audio.file_id)
         await bot.download_file(afile.file_path, a_path)
-        if await mixer.mix_image_audio(p_path, a_path, v_path):
+        if await asyncio.wait_for(mixer.mix_image_audio(p_path, a_path, v_path), timeout=120):
             await message.answer_video(video=FSInputFile(v_path))
             db.log_stats(message.from_user.id, "mix")
+        else:
+            await message.answer("❌ Klip yaratishda xatolik.")
+    except asyncio.TimeoutError:
+        await message.answer("⏰ Vaqt tugadi (120s). Qisqaroq audio sinab ko'ring.")
     except Exception as e:
         await message.answer(f"❌ Xato: {e}")
     finally:
