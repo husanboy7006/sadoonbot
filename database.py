@@ -110,6 +110,29 @@ class Database:
             }).execute()
         except: pass
 
+    def get_state(self, user_id):
+        if not self.supabase:
+            return (None, "")
+        try:
+            res = self.supabase.table("states").select("state, data").eq("user_id", str(user_id)).execute()
+            if res.data:
+                return (res.data[0].get("state"), res.data[0].get("data") or "")
+        except Exception as e:
+            print(f"Error getting state: {e}")
+        return (None, "")
+
+    def set_state(self, user_id, state, data=""):
+        if not self.supabase:
+            return
+        try:
+            self.supabase.table("states").upsert({
+                "user_id": str(user_id),
+                "state": state,
+                "data": data or ""
+            }).execute()
+        except Exception as e:
+            print(f"Error setting state: {e}")
+
     def get_stats_report(self):
         if not self.supabase:
             return "⚠️ Ma'lumotlar bazasi (Supabase) ulanmagan yoki kalitlar xato. Statistika mavjud emas."

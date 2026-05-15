@@ -5,8 +5,6 @@ import logging
 import socket
 import aiohttp
 from typing import Optional
-import threading
-
 # --- 1. DNS PATCH ---
 def apply_dns_patch():
     try:
@@ -41,37 +39,6 @@ from database import Database
 from openai import AsyncOpenAI
 from smm_prompts import post as smm_post, reels as smm_reels, plan as smm_plan
 from smm_prompts import hashtag as smm_hashtag, caption as smm_caption, strategy as smm_strategy
-import sqlite3
-
-# --- 3. SQLITE STATE (user_id, state, state_data) ---
-sqlite_lock = threading.Lock()
-
-def init_sqlite():
-    with sqlite_lock:
-        with sqlite3.connect("local_states.db") as conn:
-            conn.execute("CREATE TABLE IF NOT EXISTS states (user_id TEXT PRIMARY KEY, state TEXT, data TEXT)")
-            try:
-                conn.execute("ALTER TABLE states ADD COLUMN data TEXT")
-            except sqlite3.OperationalError:
-                pass  # Column already exists
-            except Exception as e:
-                print(f"[!] SQLite init error: {e}")
-            conn.commit()
-
-def set_state(user_id, state, data=""):
-    with sqlite_lock:
-        with sqlite3.connect("local_states.db") as conn:
-            conn.execute("INSERT OR REPLACE INTO states VALUES (?,?,?)", (str(user_id), state, data))
-            conn.commit()
-
-def get_state(user_id):
-    with sqlite_lock:
-        with sqlite3.connect("local_states.db") as conn:
-            row = conn.execute("SELECT state, data FROM states WHERE user_id=?", (str(user_id),)).fetchone()
-    return (row[0], row[1]) if row else (None, "")
-
-init_sqlite()
-
 logging.basicConfig(filename='server.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 app = FastAPI()
 
@@ -282,7 +249,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
     audio = msg.get("audio") or msg.get("voice")
     video = msg.get("video")
 
-    state, state_data = get_state(user_id)
+    state, state_data = db.get_state(user_id)
     print(f"[*] from={user_id} state={state} text={text[:30] if text else ''}")
 
     # /stats — barcha foydalanuvchilar uchun (o'z hisobi)
@@ -303,7 +270,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
 
     # /start
     if text == "/start":
-        set_state(user_id, None)
+        db.set_state(user_id, None)
         try: db.add_user(user_id, first_name)
         except: pass
         return JSONResponse({
@@ -348,7 +315,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
 
     # 🔙 Orqaga
     if text == "🔙 Orqaga":
-        set_state(user_id, None)
+        db.set_state(user_id, None)
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
             "text": "Asosiy menyu:", "reply_markup": MAIN_KB
@@ -356,7 +323,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
 
     # 📥 Yuklab olish
     if text == "📥 Yuklab olish":
-        set_state(user_id, "waiting_download")
+        db.set_state(user_id, "waiting_download")
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
             "text": "🔗 Instagram, TikTok yoki YouTube havolasini yuboring."
@@ -364,7 +331,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
 
     # 🔍 Shazam
     if text == "🔍 Shazam":
-        set_state(user_id, "waiting_shazam")
+        db.set_state(user_id, "waiting_shazam")
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
             "text": "🎧 Audio, ovozli xabar yoki video yuboring."
@@ -372,7 +339,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
 
     # 🎬 Klip Yaratish
     if text == "🎬 Klip Yaratish":
-        set_state(user_id, "waiting_clip_photo")
+        db.set_state(user_id, "waiting_clip_photo")
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
             "text": "🖼️ Rasm yuboring."
@@ -380,7 +347,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
 
     # 🌐 Tilmoch AI
     if text == "🌐 Tilmoch AI":
-        set_state(user_id, "waiting_translate")
+        db.set_state(user_id, "waiting_translate")
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
             "text": "✍️ Tarjima qilinadigan matnni yuboring."
@@ -388,7 +355,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
 
     # ✍️ Takliflar
     if text == "✍️ Takliflar":
-        set_state(user_id, "waiting_feedback")
+        db.set_state(user_id, "waiting_feedback")
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
             "text": "✍️ Taklifingizni yozing."
@@ -403,7 +370,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         })
 
     if text == "📝 Post yozish":
-        set_state(user_id, "smm_post")
+        db.set_state(user_id, "smm_post")
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
             "text": "📝 Qaysi mavzuda post yozay?\n\n<i>Misol: Go'zallik saloni uchun aktsiya posti</i>",
@@ -411,7 +378,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         })
 
     if text == "🎬 Reels ssenariy":
-        set_state(user_id, "smm_reels")
+        db.set_state(user_id, "smm_reels")
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
             "text": "🎬 Qanday mavzuda reels ssenariy yozay?\n\n<i>Misol: Kafe uchun 'bir kunim' formatida reels</i>",
@@ -419,7 +386,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         })
 
     if text == "📅 Kontent plan":
-        set_state(user_id, "smm_plan")
+        db.set_state(user_id, "smm_plan")
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
             "text": "📅 Qaysi nisha uchun 30 kunlik plan tuzay?\n\n<i>Misol: Online kiyim do'koni</i>",
@@ -427,7 +394,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         })
 
     if text == "#️⃣ Hashtag":
-        set_state(user_id, "smm_hashtag")
+        db.set_state(user_id, "smm_hashtag")
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
             "text": "#️⃣ Qaysi mavzu uchun hashtag kerak?\n\n<i>Misol: Fitness va sport ozuqa</i>",
@@ -435,7 +402,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         })
 
     if text == "💬 Caption":
-        set_state(user_id, "smm_caption")
+        db.set_state(user_id, "smm_caption")
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
             "text": "💬 Rasm tavsifi yoki mavzuni yozing:\n\n<i>Misol: Yangi kolleksiya keldi, stilist fotosessiya</i>",
@@ -443,7 +410,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         })
 
     if text == "📊 Strategiya":
-        set_state(user_id, "smm_strategy")
+        db.set_state(user_id, "smm_strategy")
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
             "text": "📊 Biznes turingiz va maqsadingizni yozing:\n\n<i>Misol: Stomatologiya klinikasi, Instagram orqali mijoz jalb qilish</i>",
@@ -456,7 +423,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         import re
         urls = re.findall(r'https?://[^\s]+', text)
         if urls:
-            set_state(user_id, None)
+            db.set_state(user_id, None)
             url = urls[0].strip('.,()!?')
             filename = f"v_{uuid.uuid4()}.mp4"
             output = f"output/{filename}"
@@ -497,7 +464,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         })
 
     if state == "waiting_translate" and text:
-        set_state(user_id, None)
+        db.set_state(user_id, None)
         result = None
         TILMOCH_SYSTEM = """Sen "Tilmoch AI" — O'zbek, Rus va Xitoy tillari o'rtasida professional darajadagi tezkor tarjimon.
 
@@ -585,13 +552,13 @@ Chiqish formati (qat'iy):
         return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": result})
 
     if state == "waiting_shazam" and (audio or video):
-        set_state(user_id, None)
+        db.set_state(user_id, None)
         background_tasks.add_task(bg_shazam, chat_id)
         return JSONResponse({"ok": True})
 
     if state == "waiting_clip_photo" and photo:
         photo_id = photo[-1]["file_id"]
-        set_state(user_id, "waiting_clip_audio", photo_id)
+        db.set_state(user_id, "waiting_clip_audio", photo_id)
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
             "text": "🎵 Endi audio (musiqa) yuboring."
@@ -599,7 +566,7 @@ Chiqish formati (qat'iy):
 
     if state == "waiting_clip_audio":
         photo_id = state_data
-        set_state(user_id, None)
+        db.set_state(user_id, None)
         p = f"temp/p_{uuid.uuid4()}.jpg"
         a = f"temp/a_{uuid.uuid4()}.mp3"
         v = f"output/v_{uuid.uuid4()}.mp4"
@@ -632,7 +599,7 @@ Chiqish formati (qat'iy):
                 if os.path.exists(f): os.remove(f)
 
     if state == "waiting_feedback" and text:
-        set_state(user_id, None)
+        db.set_state(user_id, None)
         background_tasks.add_task(
             tg_send, int(ADMIN_ID),
             f"📩 Taklif:\n👤 {first_name} (ID: {user_id})\n\n{text}"
@@ -645,20 +612,20 @@ Chiqish formati (qat'iy):
     if state in ("smm_post", "smm_reels", "smm_plan", "smm_hashtag", "smm_caption", "smm_strategy") and text:
         balance = db.get_balance(user_id)
         if balance <= 0:
-            set_state(user_id, None)
+            db.set_state(user_id, None)
             return JSONResponse({
                 "method": "sendMessage", "chat_id": chat_id,
                 "text": "⚠️ Balansingiz tugagan!\n\n💰 To'ldirish uchun /start bosing va To'ldirish tugmasini tanlang.",
                 "reply_markup": MAIN_KB
             })
         if not openai_client:
-            set_state(user_id, None)
+            db.set_state(user_id, None)
             return JSONResponse({
                 "method": "sendMessage", "chat_id": chat_id,
                 "text": "❌ OpenAI API kalit sozlanmagan.", "reply_markup": SMM_KB
             })
         mode = state
-        set_state(user_id, None)
+        db.set_state(user_id, None)
         background_tasks.add_task(bg_smm, chat_id, user_id, text, mode)
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
@@ -687,7 +654,7 @@ async def debug_state(user_id: str, x_api_key: Optional[str] = Header(None)):
         raise HTTPException(403, detail="Forbidden")
     if not SADOON_API_KEY and str(user_id) != str(ADMIN_ID):
         raise HTTPException(403, detail="Forbidden")
-    state, data = get_state(user_id)
+    state, data = db.get_state(user_id)
     return {"user_id": user_id, "state": state, "data": data}
 
 @app.post("/api/download-video")
