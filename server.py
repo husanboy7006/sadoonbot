@@ -237,6 +237,34 @@ async def _cleanup_file(path, delay=60):
 async def bg_shazam(chat_id):
     await tg_send(chat_id, "❌ Shazam vaqtincha ishlamaydi.")
 
+async def bg_broadcast(admin_chat_id, msg: dict):
+    users = db.get_all_users()
+    total = len(users)
+    sent = 0
+    failed = 0
+    photo = msg.get("photo")
+    video = msg.get("video")
+    caption = msg.get("caption", "")
+    text_msg = msg.get("text", "")
+    for user_id in users:
+        try:
+            if photo:
+                await tg("sendPhoto", chat_id=int(user_id),
+                         photo=photo[-1]["file_id"], caption=caption, parse_mode="HTML")
+            elif video:
+                await tg("sendVideo", chat_id=int(user_id),
+                         video=video["file_id"], caption=caption, parse_mode="HTML")
+            else:
+                await tg("sendMessage", chat_id=int(user_id),
+                         text=text_msg, parse_mode="HTML")
+            sent += 1
+        except Exception:
+            failed += 1
+        await asyncio.sleep(0.05)
+    await tg("sendMessage", chat_id=admin_chat_id,
+             text=f"✅ <b>Reklama yuborildi!</b>\n\n👥 Jami: {total} ta\n✅ Yuborildi: {sent} ta\n❌ Bloklanган: {failed} ta",
+             parse_mode="HTML")
+
 async def bg_smm(chat_id, user_id, text, mode):
     if not db.is_premium(user_id):
         used = db.get_daily_smm(user_id)
@@ -418,6 +446,22 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
             return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "⛔ Ruxsat yo'q."})
         report = db.get_stats_report()
         return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": report, "parse_mode": "HTML"})
+
+    # /reklama — faqat admin uchun
+    if text == "/reklama":
+        if int(user_id) != ADMIN_ID:
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "⛔ Ruxsat yo'q."})
+        db.set_state(user_id, "waiting_broadcast")
+        return JSONResponse({
+            "method": "sendMessage", "chat_id": chat_id,
+            "text": (
+                "📢 <b>Reklama yuborish</b>\n\n"
+                "Yubormoqchi bo'lgan xabarni yozing.\n"
+                "Rasm, video yoki matn bo'lishi mumkin.\n\n"
+                "❌ Bekor qilish: /start"
+            ),
+            "parse_mode": "HTML"
+        })
 
     # /start
     if text == "/start":
@@ -784,6 +828,14 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         finally:
             for f in [p, a]:
                 if os.path.exists(f): os.remove(f)
+
+    if state == "waiting_broadcast" and int(user_id) == ADMIN_ID:
+        db.set_state(user_id, None)
+        background_tasks.add_task(bg_broadcast, chat_id, msg)
+        return JSONResponse({
+            "method": "sendMessage", "chat_id": chat_id,
+            "text": "⏳ Reklama yuborilmoqda..."
+        })
 
     if state == "waiting_feedback" and text:
         db.set_state(user_id, None)
