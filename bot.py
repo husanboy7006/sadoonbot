@@ -1,13 +1,11 @@
 import logging
 import asyncio
 import os
-import aiohttp
 import uuid
-import urllib.parse
 import re
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import Message, FSInputFile, BufferedInputFile
+from aiogram.types import Message, FSInputFile
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -49,8 +47,6 @@ dp = Dispatcher(storage=MemoryStorage())
 
 # --- STATES ---
 class MixState(StatesGroup):
-    waiting_for_cgi_photo = State()
-    waiting_for_cgi_choices = State()
     waiting_translate = State()
     waiting_download = State()
     waiting_shazam = State()
@@ -68,12 +64,29 @@ class MixState(StatesGroup):
 # --- KEYBOARDS ---
 main_keyboard = types.ReplyKeyboardMarkup(
     keyboard=[
-        [types.KeyboardButton(text="🎬 Klip Yaratish (V3) (🖼️ rasm + 🎵 musiqa)")],
-        [types.KeyboardButton(text="🚀 CGI Product Artist (Premium v2)")],
-        [types.KeyboardButton(text="📥 Yuklab olish"), types.KeyboardButton(text="🔍 Shazam")],
-        [types.KeyboardButton(text="🌐 Tilmoch AI"), types.KeyboardButton(text="💎 Balans")],
+        [types.KeyboardButton(text="🆓 Bepul xizmatlar")],
+        [types.KeyboardButton(text="💎 Pullik xizmatlar")],
+        [types.KeyboardButton(text="💎 Balans"), types.KeyboardButton(text="💰 To'ldirish")],
+        [types.KeyboardButton(text="✍️ Takliflar")]
+    ],
+    resize_keyboard=True
+)
+
+free_keyboard = types.ReplyKeyboardMarkup(
+    keyboard=[
+        [types.KeyboardButton(text="📥 Yuklab olish"), types.KeyboardButton(text="🌐 Tilmoch AI")],
+        [types.KeyboardButton(text="🎬 Klip Yaratish")],
+        [types.KeyboardButton(text="🔍 Shazam")],
+        [types.KeyboardButton(text="🔙 Orqaga")]
+    ],
+    resize_keyboard=True
+)
+
+paid_keyboard = types.ReplyKeyboardMarkup(
+    keyboard=[
         [types.KeyboardButton(text="✍️ SMM Studio")],
-        [types.KeyboardButton(text="✍️ Takliflar"), types.KeyboardButton(text="💰 To'ldirish")]
+        [types.KeyboardButton(text="💎 Balans"), types.KeyboardButton(text="💰 To'ldirish")],
+        [types.KeyboardButton(text="🔙 Orqaga")]
     ],
     resize_keyboard=True
 )
@@ -98,49 +111,37 @@ async def start(message: Message):
         print(f"[!] DB Error: {e}")
     await message.answer(f"Xush kelibsiz, {message.from_user.full_name}! Sadoon AI botiga xush kelibsiz.", reply_markup=main_keyboard)
 
+@dp.message(Command("stats"))
+async def user_stats(message: Message):
+    balance = db.get_balance(message.from_user.id)
+    await message.answer(
+        f"📊 <b>Sizning hisobingiz</b>\n\n"
+        f"💎 Balans: <b>{balance} ta</b>\n"
+        f"🆔 ID: <code>{message.from_user.id}</code>\n\n"
+        f"💰 To'ldirish: @husanjon007",
+        parse_mode="HTML"
+    )
+
+@dp.message(Command("admin"))
+async def admin_stats(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return await message.answer("⛔ Ruxsat yo'q.")
+    report = db.get_stats_report()
+    await message.answer(report, parse_mode="HTML")
+
 @dp.message(F.text == "💎 Balans")
 async def check_balance(message: Message):
     balance = db.get_balance(message.from_user.id)
     await message.answer(f"Sizning balansingiz: {balance} somoniy.\nID: `{message.from_user.id}`", parse_mode="Markdown")
 
-@dp.message(F.text == "🚀 CGI Product Artist (Premium v2)")
-async def cgi_start(message: Message, state: FSMContext):
-    await message.answer("📸 Reklama qilmoqchi bo'lgan mahsulotingiz rasmini yuboring.")
-    await state.set_state(MixState.waiting_for_cgi_photo)
+@dp.message(F.text == "🆓 Bepul xizmatlar")
+async def free_menu(message: Message):
+    await message.answer("🆓 <b>Bepul xizmatlar</b>\n\nBitta tanlang:", reply_markup=free_keyboard, parse_mode="HTML")
 
-@dp.message(MixState.waiting_for_cgi_photo, F.photo)
-async def handle_cgi_photo(message: Message, state: FSMContext):
-    text = "🎨 Vibe: 1-Luxury 2-Fresh 3-Dark 4-Minimal 5-Energetic\n📐 Platforma: 1-Instagram 2-Story 3-Banner 4-Poster\nMisol: 1 2"
-    await message.answer(text)
-    await state.set_state(MixState.waiting_for_cgi_choices)
-
-@dp.message(MixState.waiting_for_cgi_choices, F.text)
-async def handle_cgi_final(message: Message, state: FSMContext):
-    choices = message.text.split()
-    if len(choices) < 2:
-        return await message.answer("Iltimos, ikkita raqam: 1 2")
-    vibe_map = {"1":"Luxury","2":"Fresh","3":"Dark","4":"Minimal","5":"Energetic"}
-    plat_map = {"1":"Instagram","2":"Story","3":"Banner","4":"Poster"}
-    vibe = vibe_map.get(choices[0], "Luxury")
-    plat = plat_map.get(choices[1], "Instagram")
-    await state.clear()
-    wait_msg = await message.answer("⏳ CGI Artist ishlamoqda...")
-    try:
-        f_prompt = f"product photography {vibe} style {plat}"
-        flux_url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(f_prompt)}?nologo=true"
-        async with aiohttp.ClientSession() as s:
-            async with s.get(flux_url) as fr:
-                if fr.status == 200:
-                    await message.answer_photo(photo=BufferedInputFile(await fr.read(), filename="cgi.jpg"), caption="✅ CGI")
-                    if message.from_user.id != ADMIN_ID: db.update_balance(message.from_user.id, -1)
-                    db.log_stats(message.from_user.id, "cgi")
-                else:
-                    await message.answer("❌ Rasm yaratib bo'lmadi.")
-    except Exception as e:
-        await message.answer(f"❌ Xato: {e}")
-    finally:
-        try: await wait_msg.delete()
-        except: pass
+@dp.message(F.text == "💎 Pullik xizmatlar")
+async def paid_menu(message: Message):
+    balance = db.get_balance(message.from_user.id)
+    await message.answer(f"💎 <b>Pullik xizmatlar</b>\n\n💰 Balansingiz: {balance} ta\n\nBitta tanlang:", reply_markup=paid_keyboard, parse_mode="HTML")
 
 @dp.message(F.text == "🌐 Tilmoch AI")
 async def trans_start(message: Message, state: FSMContext):
@@ -199,7 +200,7 @@ async def handle_shazam(message: Message, state: FSMContext):
     await message.answer("❌ Shazam vaqtincha ishlamaydi.")
     await state.clear()
 
-@dp.message(F.text == "🎬 Klip Yaratish (V3) (🖼️ rasm + 🎵 musiqa)")
+@dp.message(F.text == "🎬 Klip Yaratish")
 async def clip_start(message: Message, state: FSMContext):
     await message.answer("🖼 Rasm yuboring.")
     await state.set_state(MixState.waiting_clip_photo)

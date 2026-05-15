@@ -1,4 +1,5 @@
 requests
+aiohttp
 pydub
 yt-dlp
 fastapi
@@ -9,6 +10,5 @@ google-genai
 instaloader
 python-multipart
 groq
-replicate
 openai
 python-dotenv

@@ -117,14 +117,6 @@ if GROQ_KEY:
 else:
     print("[!] GROQ_KEY topilmadi!")
 
-# --- 5c. REPLICATE ---
-REPLICATE_KEY = os.getenv("REPLICATE_KEY")
-if REPLICATE_KEY:
-    os.environ["REPLICATE_API_TOKEN"] = REPLICATE_KEY
-    print(f"[*] Replicate key loaded: ...{REPLICATE_KEY[-6:]}")
-else:
-    print("[!] REPLICATE_KEY topilmadi!")
-
 # --- 5d. OPENAI ---
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 openai_client = None
@@ -146,12 +138,29 @@ SMM_PROMPTS = {
 # --- 6. KEYBOARD ---
 MAIN_KB = {
     "keyboard": [
-        [{"text": "🎬 Klip Yaratish (V3) (🖼️ rasm + 🎵 musiqa)"}],
-        [{"text": "🚀 CGI Product Artist (Premium v2)"}],
-        [{"text": "📥 Yuklab olish"}, {"text": "🔍 Shazam"}],
-        [{"text": "🌐 Tilmoch AI"}, {"text": "💎 Balans"}],
+        [{"text": "🆓 Bepul xizmatlar"}],
+        [{"text": "💎 Pullik xizmatlar"}],
+        [{"text": "💎 Balans"}, {"text": "💰 To'ldirish"}],
+        [{"text": "✍️ Takliflar"}]
+    ],
+    "resize_keyboard": True
+}
+
+FREE_KB = {
+    "keyboard": [
+        [{"text": "📥 Yuklab olish"}, {"text": "🌐 Tilmoch AI"}],
+        [{"text": "🎬 Klip Yaratish"}],
+        [{"text": "🔍 Shazam"}],
+        [{"text": "🔙 Orqaga"}]
+    ],
+    "resize_keyboard": True
+}
+
+PAID_KB = {
+    "keyboard": [
         [{"text": "✍️ SMM Studio"}],
-        [{"text": "✍️ Takliflar"}, {"text": "💰 To'ldirish"}]
+        [{"text": "💎 Balans"}, {"text": "💰 To'ldirish"}],
+        [{"text": "🔙 Orqaga"}]
     ],
     "resize_keyboard": True
 }
@@ -222,6 +231,10 @@ async def bg_shazam(chat_id):
     await tg_send(chat_id, "❌ Shazam vaqtincha ishlamaydi.")
 
 async def bg_smm(chat_id, user_id, text, mode):
+    balance = db.get_balance(user_id)
+    if balance <= 0:
+        await tg("sendMessage", chat_id=chat_id, text="⚠️ Balansingiz tugagan!\n\n💰 To'ldirish uchun admin bilan bog'laning: @husanjon007", reply_markup=MAIN_KB)
+        return
     result = None
     try:
         response = await openai_client.chat.completions.create(
@@ -249,56 +262,6 @@ async def bg_smm(chat_id, user_id, text, mode):
             await tg("sendMessage", chat_id=chat_id, text=result)
         await tg("sendMessage", chat_id=chat_id, text=f"📊 Qolgan balans: {remaining} ta", reply_markup=SMM_KB)
 
-CGI_PROMPT = """You are a world-class CGI Product Visualization Director and advertising creative director.
-TASK: Take this product and create a HIGH-END, cinematic advertising image.
-- Professional studio lighting with dramatic shadows
-- Luxury background matching the vibe
-- Photorealistic render quality
-- No text overlays
-Vibe: {vibe}
-Platform format: {plat}"""
-
-async def bg_cgi(chat_id, photo_id, vibe, plat):
-    import base64, replicate as repl
-    p = f"temp/p_{uuid.uuid4()}.jpg"
-    wait_id = None
-    try:
-        wait = await tg("sendMessage", chat_id=chat_id, text="⏳ CGI Artist ishlamoqda (30-60 soniya)...")
-        wait_id = wait.get("result", {}).get("message_id")
-        await tg_download(photo_id, p)
-        with open(p, "rb") as f:
-            img_b64 = base64.b64encode(f.read()).decode()
-        img_uri = f"data:image/jpeg;base64,{img_b64}"
-        prompt = (
-            f"Ultra-high-end CGI product photography, {vibe} style, "
-            f"professional studio lighting with dramatic shadows, luxury background, "
-            f"commercial advertising for {plat}, 8K resolution, photorealistic, "
-            f"award-winning product shot, no text, no watermark"
-        )
-        output = await repl.async_run(
-            "black-forest-labs/flux-dev",
-            input={
-                "prompt": prompt,
-                "image": img_uri,
-                "strength": 0.75,
-                "num_inference_steps": 28,
-                "guidance": 3.5,
-                "output_format": "jpeg",
-            }
-        )
-        img_url = str(output[0]) if output else None
-        if img_url:
-            await tg("sendPhoto", chat_id=chat_id, photo=img_url, caption=f"💎 CGI: {vibe} / {plat}")
-        else:
-            await tg_send(chat_id, "❌ Replicate rasm yarata olmadi.")
-    except Exception as e:
-        await tg_send(chat_id, f"❌ CGI xatolik: {str(e)[:200]}")
-    finally:
-        if wait_id:
-            try: await tg("deleteMessage", chat_id=chat_id, message_id=wait_id)
-            except: pass
-        if os.path.exists(p): os.remove(p)
-
 # --- 9. WEBHOOK HANDLER ---
 @app.post("/webhook/bot")
 async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
@@ -322,8 +285,17 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
     state, state_data = get_state(user_id)
     print(f"[*] from={user_id} state={state} text={text[:30] if text else ''}")
 
-    # /stats (faqat admin)
+    # /stats — barcha foydalanuvchilar uchun (o'z hisobi)
     if text == "/stats":
+        balance = db.get_balance(user_id)
+        return JSONResponse({
+            "method": "sendMessage", "chat_id": chat_id,
+            "text": f"📊 <b>Sizning hisobingiz</b>\n\n💎 Balans: <b>{balance} ta</b>\n🆔 ID: <code>{user_id}</code>\n\n💰 To'ldirish: @husanjon007",
+            "parse_mode": "HTML"
+        })
+
+    # /admin — faqat admin uchun to'liq statistika
+    if text == "/admin":
         if int(user_id) != ADMIN_ID:
             return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "⛔ Ruxsat yo'q."})
         report = db.get_stats_report()
@@ -357,6 +329,31 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
             "parse_mode": "Markdown"
         })
 
+    # 🆓 Bepul xizmatlar
+    if text == "🆓 Bepul xizmatlar":
+        return JSONResponse({
+            "method": "sendMessage", "chat_id": chat_id,
+            "text": "🆓 <b>Bepul xizmatlar</b>\n\nBitta tanlang:",
+            "parse_mode": "HTML", "reply_markup": FREE_KB
+        })
+
+    # 💎 Pullik xizmatlar
+    if text == "💎 Pullik xizmatlar":
+        balance = db.get_balance(user_id)
+        return JSONResponse({
+            "method": "sendMessage", "chat_id": chat_id,
+            "text": f"💎 <b>Pullik xizmatlar</b>\n\n💰 Balansingiz: {balance} ta\n\nBitta tanlang:",
+            "parse_mode": "HTML", "reply_markup": PAID_KB
+        })
+
+    # 🔙 Orqaga
+    if text == "🔙 Orqaga":
+        set_state(user_id, None)
+        return JSONResponse({
+            "method": "sendMessage", "chat_id": chat_id,
+            "text": "Asosiy menyu:", "reply_markup": MAIN_KB
+        })
+
     # 📥 Yuklab olish
     if text == "📥 Yuklab olish":
         set_state(user_id, "waiting_download")
@@ -374,7 +371,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         })
 
     # 🎬 Klip Yaratish
-    if text == "🎬 Klip Yaratish (V3) (🖼️ rasm + 🎵 musiqa)":
+    if text == "🎬 Klip Yaratish":
         set_state(user_id, "waiting_clip_photo")
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
@@ -387,14 +384,6 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
             "text": "✍️ Tarjima qilinadigan matnni yuboring."
-        })
-
-    # 🚀 CGI
-    if text == "🚀 CGI Product Artist (Premium v2)":
-        set_state(user_id, "waiting_cgi_photo")
-        return JSONResponse({
-            "method": "sendMessage", "chat_id": chat_id,
-            "text": "📸 Reklama qilmoqchi bo'lgan mahsulotingiz rasmini yuboring."
         })
 
     # ✍️ Takliflar
@@ -411,13 +400,6 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
             "method": "sendMessage", "chat_id": chat_id,
             "text": "✍️ <b>SMM Studio</b>\n\nQaysi xizmatdan foydalanmoqchisiz?",
             "parse_mode": "HTML", "reply_markup": SMM_KB
-        })
-
-    if text == "🔙 Orqaga":
-        set_state(user_id, None)
-        return JSONResponse({
-            "method": "sendMessage", "chat_id": chat_id,
-            "text": "Asosiy menyu:", "reply_markup": MAIN_KB
         })
 
     if text == "📝 Post yozish":
@@ -602,29 +584,6 @@ Chiqish formati (qat'iy):
         db.log_stats(user_id, "translate")
         return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": result})
 
-    if state == "waiting_cgi_photo" and photo:
-        photo_id = photo[-1]["file_id"]
-        set_state(user_id, "waiting_cgi_choices", photo_id)
-        return JSONResponse({
-            "method": "sendMessage", "chat_id": chat_id,
-            "text": "🎨 Vibe: 1-Luxury 2-Fresh 3-Dark 4-Minimal 5-Energetic\n📐 Platforma: 1-Instagram 2-Story 3-Banner 4-Poster\nMisol: 1 2"
-        })
-
-    if state == "waiting_cgi_choices" and text:
-        choices = text.split()
-        if len(choices) < 2:
-            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "Iltimos, ikkita raqam yuboring: masalan 1 2"})
-        vibe_map = {"1": "Luxury", "2": "Fresh", "3": "Dark", "4": "Minimal", "5": "Energetic"}
-        plat_map = {"1": "Instagram", "2": "Story", "3": "Banner", "4": "Poster"}
-        vibe = vibe_map.get(choices[0], "Luxury")
-        plat = plat_map.get(choices[1], "Instagram")
-        photo_id = state_data
-        set_state(user_id, None)
-        if not REPLICATE_KEY:
-            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "❌ REPLICATE_KEY sozlanmagan."})
-        background_tasks.add_task(bg_cgi, chat_id, photo_id, vibe, plat)
-        return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "⏳ CGI Artist ishlamoqda (30-60 soniya)..."})
-
     if state == "waiting_shazam" and (audio or video):
         set_state(user_id, None)
         background_tasks.add_task(bg_shazam, chat_id)
@@ -669,7 +628,7 @@ Chiqish formati (qat'iy):
         except Exception as e:
             return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": f"❌ Xato: {str(e)[:200]}"})
         finally:
-            for f in [p, a, v]:
+            for f in [p, a]:
                 if os.path.exists(f): os.remove(f)
 
     if state == "waiting_feedback" and text:
