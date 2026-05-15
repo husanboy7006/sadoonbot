@@ -59,6 +59,8 @@ class MixState(StatesGroup):
     smm_hashtag = State()
     smm_caption = State()
     smm_strategy = State()
+    # Admin
+    waiting_broadcast = State()
 
 # --- KEYBOARDS ---
 SMM_FREE_DAILY = int(os.getenv("FREE_DAILY_LIMIT", "3"))
@@ -111,7 +113,21 @@ async def start(message: Message):
         db.add_user(message.from_user.id, message.from_user.full_name)
     except Exception as e:
         print(f"[!] DB Error: {e}")
-    await message.answer(f"Xush kelibsiz, {message.from_user.full_name}! Sadoon AI botiga xush kelibsiz.", reply_markup=main_keyboard)
+    await message.answer(
+        f"Xush kelibsiz, {message.from_user.full_name}! 👋\n\n"
+        f"🤖 <b>Sadoon AI</b> — sizning aqlli yordamchingiz!\n\n"
+        f"🆓 <b>Bepul xizmatlar:</b>\n"
+        f"📥 Video yuklab olish (TikTok, Instagram, YouTube)\n"
+        f"🌐 Tilmoch AI (O'zbek ↔ Rus ↔ Xitoy)\n"
+        f"🎬 Klip yaratish (rasm + musiqa)\n\n"
+        f"💎 <b>Pullik xizmatlar:</b>\n"
+        f"✍️ SMM Studio — AI yordamida kontent yaratish\n"
+        f"   📝 Post • 🎬 Reels • 📅 Plan\n"
+        f"   #️⃣ Hashtag • 💬 Caption • 📊 Strategiya\n\n"
+        f"🆓 Kunlik <b>{SMM_FREE_DAILY} ta</b> bepul SMM so'rov\n\n"
+        f"📌 Boshlash uchun quyidagi tugmalardan foydalaning 👇",
+        parse_mode="HTML", reply_markup=main_keyboard
+    )
 
 @dp.message(Command("stats"))
 async def user_stats(message: Message):
@@ -139,6 +155,72 @@ async def admin_stats(message: Message):
         return await message.answer("⛔ Ruxsat yo'q.")
     report = db.get_stats_report()
     await message.answer(report, parse_mode="HTML")
+
+
+@dp.message(Command("reklama"))
+async def broadcast_start(message: Message, state: FSMContext):
+    """Barcha foydalanuvchilarga reklama yuborish — faqat admin"""
+    if message.from_user.id != ADMIN_ID:
+        return await message.answer("⛔ Ruxsat yo'q.")
+    await message.answer(
+        "📢 <b>Reklama yuborish</b>\n\n"
+        "Yubormoqchi bo'lgan xabarni yozing.\n"
+        "Rasm, video yoki matn bo'lishi mumkin.\n\n"
+        "❌ Bekor qilish uchun /bekor yozing.",
+        parse_mode="HTML"
+    )
+    await state.set_state(MixState.waiting_broadcast)
+
+
+@dp.message(MixState.waiting_broadcast, F.text | F.photo | F.video)
+async def broadcast_send(message: Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        await state.clear()
+        return
+    await state.clear()
+    users = db.get_all_users()
+    total = len(users)
+    sent = 0
+    failed = 0
+    status_msg = await message.answer(f"⏳ Yuborilmoqda... 0/{total}")
+    for i, user_id in enumerate(users):
+        try:
+            if message.photo:
+                await bot.send_photo(
+                    chat_id=int(user_id),
+                    photo=message.photo[-1].file_id,
+                    caption=message.caption or "",
+                    parse_mode="HTML"
+                )
+            elif message.video:
+                await bot.send_video(
+                    chat_id=int(user_id),
+                    video=message.video.file_id,
+                    caption=message.caption or "",
+                    parse_mode="HTML"
+                )
+            else:
+                await bot.send_message(
+                    chat_id=int(user_id),
+                    text=message.text,
+                    parse_mode="HTML"
+                )
+            sent += 1
+        except Exception:
+            failed += 1
+        if (i + 1) % 10 == 0:
+            try:
+                await status_msg.edit_text(f"⏳ Yuborilmoqda... {i+1}/{total}")
+            except Exception:
+                pass
+        await asyncio.sleep(0.05)
+    await status_msg.edit_text(
+        f"✅ <b>Reklama yuborildi!</b>\n\n"
+        f"👥 Jami: {total} ta\n"
+        f"✅ Yuborildi: {sent} ta\n"
+        f"❌ Bloklanган: {failed} ta",
+        parse_mode="HTML"
+    )
 
 @dp.message(F.text == "📊 Mening limitim")
 async def check_limit(message: Message):

@@ -470,7 +470,21 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         except: pass
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
-            "text": f"Xush kelibsiz, {first_name}! 🚀 Sadoon AI botiga xush kelibsiz.",
+            "text": (
+                f"Xush kelibsiz, {first_name}! 👋\n\n"
+                f"🤖 <b>Sadoon AI</b> — sizning aqlli yordamchingiz!\n\n"
+                f"🆓 <b>Bepul xizmatlar:</b>\n"
+                f"📥 Video yuklab olish (TikTok, Instagram, YouTube)\n"
+                f"🌐 Tilmoch AI (O'zbek ↔ Rus ↔ Xitoy)\n"
+                f"🎬 Klip yaratish (rasm + musiqa)\n\n"
+                f"💎 <b>Pullik xizmatlar:</b>\n"
+                f"✍️ SMM Studio — AI yordamida kontent yaratish\n"
+                f"   📝 Post • 🎬 Reels • 📅 Plan\n"
+                f"   #️⃣ Hashtag • 💬 Caption • 📊 Strategiya\n\n"
+                f"🆓 Kunlik <b>{SMM_FREE_DAILY} ta</b> bepul SMM so'rov\n\n"
+                f"📌 Boshlash uchun quyidagi tugmalardan foydalaning 👇"
+            ),
+            "parse_mode": "HTML",
             "reply_markup": MAIN_KB
         })
 
