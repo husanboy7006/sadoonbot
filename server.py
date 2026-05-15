@@ -247,7 +247,9 @@ async def bg_download(chat_id, user_id, url):
         if success:
             file_url = f"{BASE_URL}/output/{filename}"
             db.log_stats(user_id, "download")
-            await tg("sendVideo", chat_id=chat_id, video=file_url, supports_streaming=True)
+            await tg("sendVideo", chat_id=chat_id, video=file_url, supports_streaming=True,
+                     caption="🤖 <b>Sadoon AI</b> — video yuklab olish, tarjima, SMM va boshqa xizmatlar!\n👉 @sadoon_ai_bot",
+                     parse_mode="HTML")
             asyncio.create_task(_cleanup_file(output, 120))
             return
         if os.path.exists(output): os.remove(output)
