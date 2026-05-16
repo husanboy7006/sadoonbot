@@ -202,6 +202,13 @@ SMM_KB = {
 # --- 7. TELEGRAM HELPERS ---
 _TG_TIMEOUT = aiohttp.ClientTimeout(total=60, connect=15)
 
+def fmt_date(date_str):
+    try:
+        from datetime import datetime
+        return datetime.strptime(date_str, "%Y-%m-%d").strftime("%d.%m.%Y")
+    except:
+        return date_str
+
 async def tg(method, **kwargs):
     for attempt in range(3):
         try:
@@ -375,7 +382,7 @@ async def handle_callback_query(query: dict):
         until = db.activate_premium(str(uid), days)
         old_caption = query["message"].get("caption", "")
         await tg("editMessageCaption", chat_id=chat_id, message_id=msg_id,
-                 caption=old_caption + f"\n\n✅ Tasdiqlandi! {until} gacha", parse_mode="HTML")
+                 caption=old_caption + f"\n\n✅ Tasdiqlandi! {fmt_date(until)} gacha", parse_mode="HTML")
         _, sdata = db.get_state(str(uid))
         user_chat = None
         if sdata:
@@ -386,7 +393,7 @@ async def handle_callback_query(query: dict):
         if user_chat:
             await tg("sendMessage", chat_id=user_chat, text=(
                 f"🎉 <b>Plus faollashtirildi!</b>\n\n"
-                f"📅 {until} gacha amal qiladi\n"
+                f"📅 {fmt_date(until)} gacha amal qiladi\n"
                 f"✅ Kuniga {SMM_PREMIUM_DAILY} ta SMM so'rovdan foydalaning!\n\n/start"
             ), parse_mode="HTML")
         return JSONResponse({"ok": True})
@@ -447,7 +454,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         prem = db.is_premium(user_id)
         if prem:
             until = db.get_user_metadata(user_id).get("premium_until", "")
-            status = f"💎 Plus ({until} gacha)"
+            status = f"💎 Plus ({fmt_date(until)} gacha)"
             limit_text = f"{used}/{SMM_PREMIUM_DAILY} ta ishlatildi"
         else:
             status = "🆓 Free"
@@ -519,7 +526,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
             until = db.get_user_metadata(user_id).get("premium_until", "")
             return JSONResponse({
                 "method": "sendMessage", "chat_id": chat_id,
-                "text": f"💎 <b>Premium aktiv</b>\n\n📅 {until} gacha\n✅ Kuniga {SMM_PREMIUM_DAILY} ta SMM so'rov",
+                "text": f"💎 <b>Plus aktiv</b>\n\n📅 {fmt_date(until)} gacha\n✅ Kuniga {SMM_PREMIUM_DAILY} ta SMM so'rov",
                 "parse_mode": "HTML", "reply_markup": PAID_KB
             })
         remaining = max(0, SMM_FREE_DAILY - used)
@@ -565,7 +572,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         prem = db.is_premium(user_id)
         if prem:
             until = db.get_user_metadata(user_id).get("premium_until", "")
-            info = f"💎 Plus aktiv ({until} gacha) — {SMM_PREMIUM_DAILY} ta/kun"
+            info = f"💎 Plus aktiv ({fmt_date(until)} gacha) — {SMM_PREMIUM_DAILY} ta/kun"
         else:
             remaining = max(0, SMM_FREE_DAILY - used)
             info = f"🆓 Bugun qoldi: {remaining}/{SMM_FREE_DAILY} ta bepul so'rov"
