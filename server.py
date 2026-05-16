@@ -417,6 +417,19 @@ async def handle_callback_query(query: dict):
                      text=f"❌ To'lovingiz tasdiqlanmadi.\n\nSavol bo'lsa: {PAYMENT_ADMIN}")
         return JSONResponse({"ok": True})
 
+    # Foydalanuvchiga javob berish
+    if data.startswith("reply_"):
+        if from_id != ADMIN_ID:
+            await tg("answerCallbackQuery", callback_query_id=cq_id, text="⛔ Ruxsat yo'q.", show_alert=True)
+            return JSONResponse({"ok": True})
+        target_id = data.replace("reply_", "")
+        await tg("answerCallbackQuery", callback_query_id=cq_id)
+        db.set_state(str(from_id), "admin_reply", target_id)
+        await tg("sendMessage", chat_id=chat_id,
+            text=f"✉️ <b>Javob yozing</b>\n\nID <code>{target_id}</code> ga yuboriladi:\n\n❌ Bekor: /start",
+            parse_mode="HTML")
+        return JSONResponse({"ok": True})
+
     # Admin panel tugmalari
     if data.startswith("admin_"):
         if from_id != ADMIN_ID:
@@ -475,6 +488,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
     chat_id = msg["chat"]["id"]
     user_id = str(msg["from"]["id"])
     first_name = msg["from"].get("first_name", "Foydalanuvchi")
+    username = msg["from"].get("username", "")
     text = msg.get("text", "")
     photo = msg.get("photo")
     audio = msg.get("audio") or msg.get("voice")
@@ -893,9 +907,14 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
 
     if state == "waiting_feedback" and text:
         db.set_state(user_id, None)
+        keyboard = {"inline_keyboard": [
+            [{"text": "✉️ Javob berish", "callback_data": f"reply_{user_id}"}]
+        ]}
         background_tasks.add_task(
-            tg_send, int(ADMIN_ID),
-            f"📩 Taklif:\n👤 {first_name} (ID: {user_id})\n\n{text}"
+            tg, "sendMessage",
+            chat_id=int(ADMIN_ID),
+            text=f"📩 Taklif:\n👤 {first_name}{' (@' + username + ')' if username else ''}\n🆔 {user_id}\n\n{text}",
+            reply_markup=keyboard
         )
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
@@ -986,6 +1005,17 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
                     f"📊 Tarif: {status}\n"
                     f"📝 Bugun SMM: {smm_used} ta"
                 ), "parse_mode": "HTML"})
+
+        if state == "admin_reply":
+            target_id = state_data
+            db.set_state(user_id, None)
+            await_result = await tg("sendMessage", chat_id=int(target_id),
+                text=f"📬 <b>Admin javobi:</b>\n\n{text}", parse_mode="HTML")
+            if await_result.get("ok"):
+                return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                    "text": f"✅ Javob yuborildi → <code>{target_id}</code>", "parse_mode": "HTML"})
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                "text": "❌ Yuborishda xatolik. Foydalanuvchi botni bloklagan bo'lishi mumkin."})
 
     # Default
     return JSONResponse({
