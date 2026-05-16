@@ -79,14 +79,20 @@ class Database:
             from datetime import date
             meta = self.get_user_metadata(user_id)
             until = meta.get("premium_until", "")
-            return bool(until) and until >= str(date.today())
-        except:
+            result = bool(until) and until >= str(date.today())
+            print(f"[DB] is_premium: user_id={user_id}, until={until!r}, result={result}")
+            return result
+        except Exception as e:
+            print(f"[DB] is_premium error: {e}")
             return False
 
     def activate_premium(self, user_id, days):
         from datetime import date, timedelta
         until = str(date.today() + timedelta(days=days))
-        self.update_user_metadata(user_id, {"premium_until": until})
+        print(f"[DB] activate_premium: user_id={user_id}, until={until}")
+        ok = self.update_user_metadata(user_id, {"premium_until": until})
+        meta_after = self.get_user_metadata(user_id)
+        print(f"[DB] activate_premium result={ok}, meta_after={meta_after}")
         return until
 
     def get_daily_smm(self, user_id):
