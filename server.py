@@ -119,6 +119,7 @@ SMM_PROMPTS = {
 }
 
 SMM_FREE_DAILY = int(os.getenv("FREE_DAILY_LIMIT", "3"))
+SMM_PREMIUM_DAILY = int(os.getenv("PREMIUM_DAILY_LIMIT", "30"))
 SMM_MAX_TOKENS = int(os.getenv("MAX_TOKENS", "5000"))
 SMM_TEMPERATURE = float(os.getenv("TEMPERATURE", "0.8"))
 PAYMENT_ADMIN = os.getenv("PAYMENT_ADMIN", "@husanjon007")
@@ -155,9 +156,7 @@ Chiqish formati (qat'iy):
 1. [1-variant]
 2. [2-variant]"""
 PLAN_INFO = {
-    "starter": {"name": "⭐ Starter", "price": "29,000 so'm", "days": 30},
-    "pro":     {"name": "💎 Pro",     "price": "79,000 so'm", "days": 30},
-    "biznes":  {"name": "👑 Biznes",  "price": "149,000 so'm", "days": 30},
+    "starter": {"name": "⭐ Plus", "price": "29,000 so'm", "days": 30},
 }
 pending_payments: dict = {}
 
@@ -184,7 +183,7 @@ FREE_KB = {
 PAID_KB = {
     "keyboard": [
         [{"text": "✍️ SMM Studio"}],
-        [{"text": "💎 Premium olish"}, {"text": "📊 Mening limitim"}],
+        [{"text": "💎 Plus olish"}, {"text": "📊 Mening limitim"}],
         [{"text": "🔙 Orqaga"}]
     ],
     "resize_keyboard": True
@@ -290,20 +289,19 @@ async def bg_broadcast(admin_chat_id, msg: dict):
              parse_mode="HTML")
 
 async def bg_smm(chat_id, user_id, text, mode):
-    if not db.is_premium(user_id):
-        used = db.get_daily_smm(user_id)
-        if used >= SMM_FREE_DAILY:
-            keyboard = {"inline_keyboard": [
-                [{"text": "⭐ Starter — 29,000 so'm/oy", "callback_data": "pay_starter"}],
-                [{"text": "💎 Pro — 79,000 so'm/oy",     "callback_data": "pay_pro"}],
-                [{"text": "👑 Biznes — 149,000 so'm/oy", "callback_data": "pay_biznes"}],
-            ]}
-            await tg("sendMessage", chat_id=chat_id, text=(
-                f"⚠️ <b>Kunlik limit tugadi!</b>\n\n"
-                f"📝 Bugun {SMM_FREE_DAILY}/{SMM_FREE_DAILY} ta bepul so'rov ishlatildi.\n\n"
-                f"💎 Cheksiz ishlash uchun Premium oling:"
-            ), parse_mode="HTML", reply_markup=keyboard)
-            return
+    is_prem = db.is_premium(user_id)
+    used = db.get_daily_smm(user_id)
+    daily_limit = SMM_PREMIUM_DAILY if is_prem else SMM_FREE_DAILY
+    if used >= daily_limit:
+        keyboard = {"inline_keyboard": [
+            [{"text": "⭐ Plus — 29,000 so'm/oy", "callback_data": "pay_starter"}],
+        ]}
+        await tg("sendMessage", chat_id=chat_id, text=(
+            f"⚠️ <b>Kunlik limit tugadi!</b>\n\n"
+            f"📝 Bugun {used}/{daily_limit} ta so'rov ishlatildi.\n\n"
+            f"💎 Ko'proq ishlash uchun Plus oling:"
+        ), parse_mode="HTML", reply_markup=keyboard)
+        return
     result = None
     try:
         response = await openai_client.chat.completions.create(
@@ -332,7 +330,8 @@ async def bg_smm(chat_id, user_id, text, mode):
             remaining = max(0, SMM_FREE_DAILY - used)
             footer = f"📊 Qolgan bepul so'rovlar: {remaining}/{SMM_FREE_DAILY}"
         else:
-            footer = "💎 Premium — Cheksiz so'rovlar ♾️"
+            remaining = max(0, SMM_PREMIUM_DAILY - used)
+            footer = f"💎 Plus: {remaining}/{SMM_PREMIUM_DAILY} ta so'rov qoldi"
         await tg("sendMessage", chat_id=chat_id, text=footer, reply_markup=SMM_KB)
 
 # --- 9. WEBHOOK HANDLER ---
@@ -360,7 +359,7 @@ async def handle_callback_query(query: dict):
             f"2️⃣ Tarif nomini ayting: <b>{info['name']}</b>\n"
             f"3️⃣ To'lovni amalga oshiring\n"
             f"4️⃣ To'lov chekini (screenshot) <b>shu botga</b> yuboring\n\n"
-            f"⏳ Admin tekshirib, premium faollashtiriladi.\n"
+            f"⏳ Admin tekshirib, plus faollashtiriladi.\n"
             f"❌ Bekor qilish: /start"
         ), parse_mode="HTML")
         return JSONResponse({"ok": True})
@@ -386,9 +385,9 @@ async def handle_callback_query(query: dict):
             user_chat = pending_payments.pop(uid)["chat_id"]
         if user_chat:
             await tg("sendMessage", chat_id=user_chat, text=(
-                f"🎉 <b>Premium faollashtirildi!</b>\n\n"
+                f"🎉 <b>Plus faollashtirildi!</b>\n\n"
                 f"📅 {until} gacha amal qiladi\n"
-                f"✅ Cheksiz SMM so'rovlardan foydalaning!\n\n/start"
+                f"✅ Kuniga {SMM_PREMIUM_DAILY} ta SMM so'rovdan foydalaning!\n\n/start"
             ), parse_mode="HTML")
         return JSONResponse({"ok": True})
 
@@ -448,8 +447,8 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         prem = db.is_premium(user_id)
         if prem:
             until = db.get_user_metadata(user_id).get("premium_until", "")
-            status = f"💎 Premium ({until} gacha)"
-            limit_text = "Cheksiz ♾️"
+            status = f"💎 Plus ({until} gacha)"
+            limit_text = f"{used}/{SMM_PREMIUM_DAILY} ta ishlatildi"
         else:
             status = "🆓 Free"
             limit_text = f"{used}/{SMM_FREE_DAILY} ta ishlatildi"
@@ -520,7 +519,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
             until = db.get_user_metadata(user_id).get("premium_until", "")
             return JSONResponse({
                 "method": "sendMessage", "chat_id": chat_id,
-                "text": f"💎 <b>Premium aktiv</b>\n\n📅 {until} gacha\n✅ Cheksiz SMM so'rovlar",
+                "text": f"💎 <b>Premium aktiv</b>\n\n📅 {until} gacha\n✅ Kuniga {SMM_PREMIUM_DAILY} ta SMM so'rov",
                 "parse_mode": "HTML", "reply_markup": PAID_KB
             })
         remaining = max(0, SMM_FREE_DAILY - used)
@@ -530,27 +529,23 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
                 f"📊 <b>Kunlik limitingiz</b>\n\n"
                 f"📝 SMM bugun: {used}/{SMM_FREE_DAILY} ta\n"
                 f"🆓 Qoldi: {remaining} ta\n\n"
-                f"💎 Cheksiz ishlash uchun Premium oling!"
+                f"💎 Ko'proq ishlash uchun Plus oling!"
             ),
             "parse_mode": "HTML", "reply_markup": PAID_KB
         })
 
-    # 💎 Premium olish
-    if text == "💎 Premium olish":
+    # 💎 Plus olish
+    if text == "💎 Plus olish":
         keyboard = {"inline_keyboard": [
-            [{"text": "⭐ Starter — 29,000 so'm/oy", "callback_data": "pay_starter"}],
-            [{"text": "💎 Pro — 79,000 so'm/oy",     "callback_data": "pay_pro"}],
-            [{"text": "👑 Biznes — 149,000 so'm/oy", "callback_data": "pay_biznes"}],
+            [{"text": "⭐ Plus — 29,000 so'm/oy", "callback_data": "pay_starter"}],
         ]}
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
             "text": (
-                f"💎 <b>Premium Rejim</b>\n\n"
-                f"✅ Cheksiz SMM so'rovlar (kunlik limitsiz)\n\n"
-                f"💰 <b>Tariflar (1 oy):</b>\n"
-                f"⭐ Starter: 29,000 so'm\n"
-                f"💎 Pro: 79,000 so'm\n"
-                f"👑 Biznes: 149,000 so'm\n\n"
+                f"💎 <b>Plus Rejim</b>\n\n"
+                f"✅ Kuniga {SMM_PREMIUM_DAILY} ta SMM so'rov\n"
+                f"🆓 Bepul: kuniga {SMM_FREE_DAILY} ta\n\n"
+                f"💰 <b>Narx:</b> 29,000 so'm/oy\n\n"
                 f"Tarif tanlang 👇"
             ),
             "parse_mode": "HTML", "reply_markup": keyboard
@@ -570,7 +565,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         prem = db.is_premium(user_id)
         if prem:
             until = db.get_user_metadata(user_id).get("premium_until", "")
-            info = f"💎 Premium aktiv ({until} gacha) — Cheksiz ♾️"
+            info = f"💎 Plus aktiv ({until} gacha) — {SMM_PREMIUM_DAILY} ta/kun"
         else:
             remaining = max(0, SMM_FREE_DAILY - used)
             info = f"🆓 Bugun qoldi: {remaining}/{SMM_FREE_DAILY} ta bepul so'rov"
@@ -779,7 +774,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         db.set_state(user_id, "pending_payment", json.dumps({"plan": plan, "chat_id": chat_id}))
         pending_payments[int(user_id)] = {"plan": plan, "chat_id": chat_id}
         keyboard = {"inline_keyboard": [[
-            {"text": f"✅ {info['days']} kun Premium", "callback_data": f"approve_{user_id}_{info['days']}"},
+            {"text": f"✅ {info['days']} kun Plus", "callback_data": f"approve_{user_id}_{info['days']}"},
             {"text": "❌ Rad etish", "callback_data": f"reject_{user_id}"},
         ]]}
         await tg("sendPhoto", chat_id=ADMIN_ID,
@@ -794,7 +789,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
                  parse_mode="HTML", reply_markup=keyboard)
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
-            "text": "✅ Chekingiz adminga yuborildi!\n⏳ Tez orada premium faollashtiriladi."
+            "text": "✅ Chekingiz adminga yuborildi!\n⏳ Tez orada plus faollashtiriladi."
         })
 
     if state == "waiting_clip_photo" and photo:
@@ -858,24 +853,23 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         })
 
     if state in ("smm_post", "smm_reels", "smm_plan", "smm_hashtag", "smm_caption", "smm_strategy") and text:
-        if not db.is_premium(user_id):
-            used = db.get_daily_smm(user_id)
-            if used >= SMM_FREE_DAILY:
-                db.set_state(user_id, None)
-                keyboard = {"inline_keyboard": [
-                    [{"text": "⭐ Starter — 29,000 so'm/oy", "callback_data": "pay_starter"}],
-                    [{"text": "💎 Pro — 79,000 so'm/oy",     "callback_data": "pay_pro"}],
-                    [{"text": "👑 Biznes — 149,000 so'm/oy", "callback_data": "pay_biznes"}],
-                ]}
-                return JSONResponse({
-                    "method": "sendMessage", "chat_id": chat_id,
-                    "text": (
-                        f"⚠️ <b>Kunlik limit tugadi!</b>\n\n"
-                        f"📝 Bugun {SMM_FREE_DAILY}/{SMM_FREE_DAILY} ta bepul so'rov ishlatildi.\n\n"
-                        f"💎 Cheksiz ishlash uchun Premium oling:"
-                    ),
-                    "parse_mode": "HTML", "reply_markup": keyboard
-                })
+        is_prem = db.is_premium(user_id)
+        used = db.get_daily_smm(user_id)
+        daily_limit = SMM_PREMIUM_DAILY if is_prem else SMM_FREE_DAILY
+        if used >= daily_limit:
+            db.set_state(user_id, None)
+            keyboard = {"inline_keyboard": [
+                [{"text": "⭐ Plus — 29,000 so'm/oy", "callback_data": "pay_starter"}],
+            ]}
+            return JSONResponse({
+                "method": "sendMessage", "chat_id": chat_id,
+                "text": (
+                    f"⚠️ <b>Kunlik limit tugadi!</b>\n\n"
+                    f"📝 Bugun {used}/{daily_limit} ta so'rov ishlatildi.\n\n"
+                    f"💎 Ko'proq ishlash uchun Plus oling:"
+                ),
+                "parse_mode": "HTML", "reply_markup": keyboard
+            })
         if not openai_client:
             db.set_state(user_id, None)
             return JSONResponse({
