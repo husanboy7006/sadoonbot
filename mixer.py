@@ -276,5 +276,3 @@ async def compress_video(input_path: str, output_path: str):
         print(f"[!] Compression error: {e}")
         return False
 
-async def identify_music(file_path: str):
-    return None

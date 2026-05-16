@@ -64,8 +64,10 @@ class MixState(StatesGroup):
 
 # --- KEYBOARDS ---
 SMM_FREE_DAILY = int(os.getenv("FREE_DAILY_LIMIT", "3"))
+SMM_PREMIUM_DAILY = int(os.getenv("PREMIUM_DAILY_LIMIT", "30"))
 SMM_MAX_TOKENS = int(os.getenv("MAX_TOKENS", "5000"))
 SMM_TEMPERATURE = float(os.getenv("TEMPERATURE", "0.8"))
+PAYMENT_ADMIN = os.getenv("PAYMENT_ADMIN", "@husanjon007")
 
 main_keyboard = types.ReplyKeyboardMarkup(
     keyboard=[
@@ -89,7 +91,7 @@ free_keyboard = types.ReplyKeyboardMarkup(
 paid_keyboard = types.ReplyKeyboardMarkup(
     keyboard=[
         [types.KeyboardButton(text="✍️ SMM Studio")],
-        [types.KeyboardButton(text="💎 Premium olish"), types.KeyboardButton(text="📊 Mening limitim")],
+        [types.KeyboardButton(text="💎 Plus olish"), types.KeyboardButton(text="📊 Mening limitim")],
         [types.KeyboardButton(text="🔙 Orqaga")]
     ],
     resize_keyboard=True
@@ -136,8 +138,8 @@ async def user_stats(message: Message):
     prem = db.is_premium(uid)
     if prem:
         until = db.get_user_metadata(uid).get("premium_until", "")
-        status = f"💎 Premium ({until} gacha)"
-        limit_text = "Cheksiz ♾️"
+        status = f"💎 Plus ({until} gacha)"
+        limit_text = f"{used}/{SMM_PREMIUM_DAILY} ta ishlatildi"
     else:
         status = "🆓 Free"
         limit_text = f"{used}/{SMM_FREE_DAILY} ta ishlatildi"
@@ -229,8 +231,9 @@ async def check_limit(message: Message):
     prem = db.is_premium(uid)
     if prem:
         until = db.get_user_metadata(uid).get("premium_until", "")
+        remaining = max(0, SMM_PREMIUM_DAILY - used)
         await message.answer(
-            f"💎 <b>Premium aktiv</b>\n\n📅 {until} gacha\n✅ Cheksiz SMM so'rovlar",
+            f"💎 <b>Plus aktiv</b>\n\n📅 {until} gacha\n✅ Kuniga {SMM_PREMIUM_DAILY} ta SMM so'rov\n📊 Qoldi: {remaining} ta",
             parse_mode="HTML", reply_markup=paid_keyboard
         )
     else:
@@ -239,20 +242,18 @@ async def check_limit(message: Message):
             f"📊 <b>Kunlik limitingiz</b>\n\n"
             f"📝 SMM bugun: {used}/{SMM_FREE_DAILY} ta\n"
             f"🆓 Qoldi: {remaining} ta\n\n"
-            f"💎 Cheksiz ishlash uchun Premium oling!",
+            f"💎 Ko'proq ishlash uchun Plus oling!",
             parse_mode="HTML", reply_markup=paid_keyboard
         )
 
-@dp.message(F.text == "💎 Premium olish")
+@dp.message(F.text == "💎 Plus olish")
 async def premium_start(message: Message):
     await message.answer(
-        f"💎 <b>Premium Rejim</b>\n\n"
-        f"✅ Cheksiz SMM so'rovlar (kunlik limitsiz)\n\n"
-        f"💰 <b>Tariflar (1 oy):</b>\n"
-        f"⭐ Starter: 29,000 so'm\n"
-        f"💎 Pro: 79,000 so'm\n"
-        f"👑 Biznes: 149,000 so'm\n\n"
-        f"To'lov uchun adminga yozing: @husanjon007\n"
+        f"💎 <b>Plus Rejim</b>\n\n"
+        f"✅ Kuniga {SMM_PREMIUM_DAILY} ta SMM so'rov\n"
+        f"🆓 Bepul: kuniga {SMM_FREE_DAILY} ta\n\n"
+        f"💰 <b>Narx:</b> 29,000 so'm/oy\n\n"
+        f"To'lov uchun adminga yozing: {PAYMENT_ADMIN}\n"
         f"To'lovdan keyin chekni botga yuboring.",
         parse_mode="HTML"
     )
@@ -268,7 +269,8 @@ async def paid_menu(message: Message):
     prem = db.is_premium(uid)
     if prem:
         until = db.get_user_metadata(uid).get("premium_until", "")
-        info = f"💎 Premium aktiv ({until} gacha) — Cheksiz ♾️"
+        remaining = max(0, SMM_PREMIUM_DAILY - used)
+        info = f"💎 Plus aktiv ({until} gacha) — {remaining}/{SMM_PREMIUM_DAILY} ta qoldi"
     else:
         remaining = max(0, SMM_FREE_DAILY - used)
         info = f"🆓 Bugun qoldi: {remaining}/{SMM_FREE_DAILY} ta bepul so'rov"
@@ -375,10 +377,6 @@ async def handle_feedback(message: Message, state: FSMContext):
     await message.answer("✅ Yuborildi. Rahmat!")
     await state.clear()
 
-@dp.message(F.text == "💰 To'ldirish")
-async def refill_start(message: Message):
-    await message.answer(f"💰 Admin: @husanjon007\nID: `{message.from_user.id}`", parse_mode="Markdown")
-
 # ═══════════════════════════════════════════
 # ✍️ SMM STUDIO
 # ═══════════════════════════════════════════
@@ -412,17 +410,16 @@ async def ask_openai_smm(system_prompt: str, user_message: str) -> str:
 
 async def smm_process(message: Message, state: FSMContext, mode: str):
     uid = message.from_user.id
-    if not db.is_premium(uid):
-        used = db.get_daily_smm(uid)
-        if used >= SMM_FREE_DAILY:
-            await message.answer(
-                f"⚠️ <b>Kunlik limit tugadi!</b>\n\n"
-                f"📝 Bugun {SMM_FREE_DAILY}/{SMM_FREE_DAILY} ta bepul so'rov ishlatildi.\n\n"
-                f"💎 Cheksiz ishlash uchun Premium oling: @husanjon007",
-                parse_mode="HTML", reply_markup=paid_keyboard
-            )
-            await state.clear()
-            return
+    allowed, used, daily_limit, is_prem = db.try_smm(uid, SMM_FREE_DAILY, SMM_PREMIUM_DAILY)
+    if not allowed:
+        await message.answer(
+            f"⚠️ <b>Kunlik limit tugadi!</b>\n\n"
+            f"📝 Bugun {used}/{daily_limit} ta so'rov ishlatildi.\n\n"
+            f"💎 Ko'proq ishlash uchun Plus oling: {PAYMENT_ADMIN}",
+            parse_mode="HTML", reply_markup=paid_keyboard
+        )
+        await state.clear()
+        return
 
     wait_msg = await message.answer("⏳ SMM AI ishlamoqda...")
     result = await ask_openai_smm(SMM_PROMPTS[mode], message.text)
@@ -434,17 +431,17 @@ async def smm_process(message: Message, state: FSMContext, mode: str):
     if result is None:
         await message.answer("❌ Xatolik yuz berdi. Qaytadan urinib ko'ring.", reply_markup=smm_keyboard)
     else:
-        used = db.increment_daily_smm(uid)
         db.log_stats(uid, mode)
         if len(result) > 4000:
             for part in [result[i:i+4000] for i in range(0, len(result), 4000)]:
                 await message.answer(part)
         else:
             await message.answer(result)
-        if db.is_premium(uid):
-            footer = "💎 Premium — Cheksiz so'rovlar ♾️"
+        remaining = max(0, daily_limit - used)
+        if is_prem:
+            footer = f"💎 Plus: {remaining}/{daily_limit} ta so'rov qoldi"
         else:
-            footer = f"📊 Qolgan bepul so'rovlar: {max(0, SMM_FREE_DAILY - used)}/{SMM_FREE_DAILY}"
+            footer = f"📊 Qolgan bepul so'rovlar: {remaining}/{daily_limit}"
         await message.answer(footer, reply_markup=smm_keyboard)
     await state.clear()
 

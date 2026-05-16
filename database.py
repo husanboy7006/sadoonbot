@@ -147,6 +147,23 @@ class Database:
         self.update_user_metadata(user_id, meta)
         return meta["smm_count"]
 
+    def try_smm(self, user_id, free_limit, premium_limit):
+        """Limitni tekshirib, ruxsat bo'lsa increment qiladi. (False, used, limit) yoki (True, new_count, limit)"""
+        from datetime import date
+        today = str(date.today())
+        is_prem = self.is_premium(user_id)
+        daily_limit = premium_limit if is_prem else free_limit
+        meta = self.get_user_metadata(user_id)
+        if meta.get("smm_date") != today:
+            meta["smm_date"] = today
+            meta["smm_count"] = 0
+        current = meta.get("smm_count", 0)
+        if current >= daily_limit:
+            return False, current, daily_limit, is_prem
+        meta["smm_count"] = current + 1
+        self.update_user_metadata(user_id, meta)
+        return True, current + 1, daily_limit, is_prem
+
     def user_exists(self, user_id):
         if not self.supabase: return False
         try:
@@ -219,31 +236,33 @@ class Database:
                 new_users_today = new_res.count if new_res.count is not None else 0
             except: pass
             
-            # 3. Stats ma'lumotlarini olish
-            data = []
-            try:
-                stats_res = self.supabase.table("stats").select("user_id, service_type, timestamp").execute() 
-                data = stats_res.data or []
-            except: pass
-            
-            # Hisoblash uchun lug'atlar
-            total_bd = {"mix": 0, "shazam": 0, "download": 0, "translate": 0,
-                        "smm_post": 0, "smm_reels": 0, "smm_plan": 0,
-                        "smm_hashtag": 0, "smm_caption": 0, "smm_strategy": 0}
+            # 3. Bugungi stats (faqat bugun)
             today_bd = {"mix": 0, "shazam": 0, "download": 0, "translate": 0,
                         "smm_post": 0, "smm_reels": 0, "smm_plan": 0,
                         "smm_hashtag": 0, "smm_caption": 0, "smm_strategy": 0}
-            
-            today_str = str(today)
-            for item in data:
-                if not isinstance(item, dict): continue
-                stype = item.get("service_type")
-                if not stype or stype not in total_bd: stype = "download"
-                
-                total_bd[stype] += 1
-                ts = item.get("timestamp", "")
-                if today_str in ts:
-                    today_bd[stype] += 1
+            total_count = 0
+            try:
+                today_res = self.supabase.table("stats").select("service_type").filter(
+                    "timestamp", "gte", f"{today} 00:00:00"
+                ).execute()
+                for item in (today_res.data or []):
+                    stype = item.get("service_type", "download")
+                    if stype in today_bd:
+                        today_bd[stype] += 1
+            except: pass
+
+            # 4. Umumiy stats (faqat so'nggi 10000 ta yozuv)
+            total_bd = {"mix": 0, "shazam": 0, "download": 0, "translate": 0,
+                        "smm_post": 0, "smm_reels": 0, "smm_plan": 0,
+                        "smm_hashtag": 0, "smm_caption": 0, "smm_strategy": 0}
+            try:
+                total_res = self.supabase.table("stats").select("service_type", count="exact").execute()
+                total_count = total_res.count or 0
+                for item in (total_res.data or []):
+                    stype = item.get("service_type", "download")
+                    if stype in total_bd:
+                        total_bd[stype] += 1
+            except: pass
                 
             report = f"📊 <b>Sadoon AI Admin Paneli</b>\n"
             report += f"━━━━━━━━━━━━━━━\n\n"
@@ -276,7 +295,7 @@ class Database:
             report += f"   ├─ #️⃣ Hashtag: {total_bd['smm_hashtag']}\n"
             report += f"   ├─ 💬 Caption: {total_bd['smm_caption']}\n"
             report += f"   └─ 📊 Strategiya: {total_bd['smm_strategy']}\n\n"
-            report += f"📈 <b>JAMI AMALLAR:</b> {len(data)} marta\n"
+            report += f"📈 <b>JAMI AMALLAR:</b> {total_count} marta\n"
             report += f"━━━━━━━━━━━━━━━"
             return report
         except Exception as e:

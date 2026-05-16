@@ -14,14 +14,8 @@ def apply_dns_patch():
         def new_getaddrinfo(*args, **kwargs):
             try:
                 return old_getaddrinfo(*args, **kwargs)
-            except socket.gaierror:
-                host = args[0]
-                if "supabase.co" in host:
-                    return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('104.21.50.110', args[1]))]
-                if "google" in host:
-                    return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('142.250.185.74', args[1]))]
-                if "telegram.org" in host:
-                    return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('149.154.167.220', args[1]))]
+            except socket.gaierror as e:
+                print(f"[!] DNS xatosi: {args[0]} — {e}")
                 raise
         socket.getaddrinfo = new_getaddrinfo
         print("[*] DNS Patch applied.")
@@ -222,13 +216,19 @@ async def tg_send(chat_id, text, **kwargs):
     await tg("sendMessage", chat_id=chat_id, text=text[:4000], **kwargs)
 
 async def tg_download(file_id, save_path):
-    async with aiohttp.ClientSession(timeout=_TG_TIMEOUT) as s:
-        async with s.get(f"{TG_API}/getFile?file_id={file_id}") as r:
-            info = await r.json()
-        fp = info["result"]["file_path"]
-        async with s.get(f"https://api.telegram.org/file/bot{BOT_TOKEN}/{fp}") as r:
-            with open(save_path, "wb") as f:
-                f.write(await r.read())
+    try:
+        async with aiohttp.ClientSession(timeout=_TG_TIMEOUT) as s:
+            async with s.get(f"{TG_API}/getFile?file_id={file_id}") as r:
+                info = await r.json()
+            fp = (info.get("result") or {}).get("file_path")
+            if not fp:
+                raise ValueError(f"file_path topilmadi: {info}")
+            async with s.get(f"https://api.telegram.org/file/bot{BOT_TOKEN}/{fp}") as r:
+                with open(save_path, "wb") as f:
+                    f.write(await r.read())
+    except Exception as e:
+        print(f"[TG] tg_download xatosi: {e}")
+        raise
 
 # --- 8. BACKGROUND TASKS ---
 async def _cleanup_file(path, delay=60):
@@ -293,10 +293,8 @@ async def bg_broadcast(admin_chat_id, msg: dict):
              parse_mode="HTML")
 
 async def bg_smm(chat_id, user_id, text, mode):
-    is_prem = db.is_premium(user_id)
-    used = db.get_daily_smm(user_id)
-    daily_limit = SMM_PREMIUM_DAILY if is_prem else SMM_FREE_DAILY
-    if used >= daily_limit:
+    allowed, used, daily_limit, is_prem = db.try_smm(user_id, SMM_FREE_DAILY, SMM_PREMIUM_DAILY)
+    if not allowed:
         keyboard = {"inline_keyboard": [
             [{"text": "⭐ Plus — 29,000 so'm/oy", "callback_data": "pay_starter"}],
         ]}
@@ -323,19 +321,17 @@ async def bg_smm(chat_id, user_id, text, mode):
     if result is None:
         await tg("sendMessage", chat_id=chat_id, text="❌ Xatolik yuz berdi. Qaytadan urinib ko'ring.", reply_markup=SMM_KB)
     else:
-        used = db.increment_daily_smm(user_id)
         db.log_stats(user_id, mode)
         if len(result) > 4000:
             for part in [result[i:i+4000] for i in range(0, len(result), 4000)]:
                 await tg("sendMessage", chat_id=chat_id, text=part)
         else:
             await tg("sendMessage", chat_id=chat_id, text=result)
-        if not db.is_premium(user_id):
-            remaining = max(0, SMM_FREE_DAILY - used)
-            footer = f"📊 Qolgan bepul so'rovlar: {remaining}/{SMM_FREE_DAILY}"
+        remaining = max(0, daily_limit - used)
+        if is_prem:
+            footer = f"💎 Plus: {remaining}/{daily_limit} ta so'rov qoldi"
         else:
-            remaining = max(0, SMM_PREMIUM_DAILY - used)
-            footer = f"💎 Plus: {remaining}/{SMM_PREMIUM_DAILY} ta so'rov qoldi"
+            footer = f"📊 Qolgan bepul so'rovlar: {remaining}/{daily_limit}"
         await tg("sendMessage", chat_id=chat_id, text=footer, reply_markup=SMM_KB)
 
 # --- 9. WEBHOOK HANDLER ---
