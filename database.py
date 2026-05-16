@@ -90,6 +90,7 @@ class Database:
                     "is_plus": is_plus,
                     "until": until,
                 })
+            result.sort(key=lambda x: x["join_date"], reverse=True)
             return result
         except Exception as e:
             print(f"Error fetching users info: {e}")
