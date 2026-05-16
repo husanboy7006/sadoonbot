@@ -420,6 +420,43 @@ async def handle_callback_query(query: dict):
                      text=f"❌ To'lovingiz tasdiqlanmadi.\n\nSavol bo'lsa: {PAYMENT_ADMIN}")
         return JSONResponse({"ok": True})
 
+    # Admin panel tugmalari
+    if data.startswith("admin_"):
+        if from_id != ADMIN_ID:
+            await tg("answerCallbackQuery", callback_query_id=cq_id, text="⛔ Ruxsat yo'q.", show_alert=True)
+            return JSONResponse({"ok": True})
+        await tg("answerCallbackQuery", callback_query_id=cq_id)
+
+        if data == "admin_stats":
+            report = db.get_stats_report()
+            await tg("sendMessage", chat_id=chat_id, text=report, parse_mode="HTML")
+
+        elif data == "admin_plusadd":
+            db.set_state(str(from_id), "admin_plusadd_id")
+            await tg("sendMessage", chat_id=chat_id,
+                text="➕ <b>Plus berish</b>\n\nFoydalanuvchi ID sini yuboring:\n<i>Misol: 123456789</i>",
+                parse_mode="HTML")
+
+        elif data == "admin_plusremove":
+            db.set_state(str(from_id), "admin_plusremove_id")
+            await tg("sendMessage", chat_id=chat_id,
+                text="➖ <b>Plus o'chirish</b>\n\nFoydalanuvchi ID sini yuboring:\n<i>Misol: 123456789</i>",
+                parse_mode="HTML")
+
+        elif data == "admin_pluscheck":
+            db.set_state(str(from_id), "admin_pluscheck_id")
+            await tg("sendMessage", chat_id=chat_id,
+                text="🔍 <b>Plus tekshirish</b>\n\nFoydalanuvchi ID sini yuboring:\n<i>Misol: 123456789</i>",
+                parse_mode="HTML")
+
+        elif data == "admin_broadcast":
+            db.set_state(str(from_id), "waiting_broadcast")
+            await tg("sendMessage", chat_id=chat_id,
+                text="📢 <b>Reklama yuborish</b>\n\nXabarni yozing (matn, rasm yoki video):\n\n❌ Bekor: /start",
+                parse_mode="HTML")
+
+        return JSONResponse({"ok": True})
+
     await tg("answerCallbackQuery", callback_query_id=cq_id)
     return JSONResponse({"ok": True})
 
@@ -470,12 +507,21 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
             "parse_mode": "HTML"
         })
 
-    # /admin — faqat admin uchun to'liq statistika
+    # /admin — faqat admin uchun panel
     if text == "/admin":
         if int(user_id) != ADMIN_ID:
             return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "⛔ Ruxsat yo'q."})
-        report = db.get_stats_report()
-        return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": report, "parse_mode": "HTML"})
+        db.set_state(user_id, None)
+        keyboard = {"inline_keyboard": [
+            [{"text": "📊 Statistika", "callback_data": "admin_stats"}],
+            [{"text": "➕ Plus berish", "callback_data": "admin_plusadd"},
+             {"text": "➖ Plus o'chirish", "callback_data": "admin_plusremove"}],
+            [{"text": "🔍 Plus tekshirish", "callback_data": "admin_pluscheck"},
+             {"text": "📢 Reklama", "callback_data": "admin_broadcast"}],
+        ]}
+        return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+            "text": "👑 <b>Admin Panel</b>\n\nQuyidagi amallardan birini tanlang:",
+            "parse_mode": "HTML", "reply_markup": keyboard})
 
     # /reklama — faqat admin uchun
     if text == "/reklama":
@@ -890,6 +936,59 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
             "method": "sendMessage", "chat_id": chat_id,
             "text": "⏳ SMM AI ishlamoqda..."
         })
+
+    # Admin state handlerlari
+    if int(user_id) == ADMIN_ID and text:
+
+        if state == "admin_plusadd_id":
+            if not text.isdigit():
+                return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                    "text": "❌ Faqat raqam kiriting (User ID):"})
+            db.set_state(user_id, "admin_plusadd_days", text)
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                "text": f"✅ ID: <code>{text}</code>\n\nNecha kun Plus berilsin?",
+                "parse_mode": "HTML"})
+
+        if state == "admin_plusadd_days":
+            if not text.isdigit():
+                return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                    "text": "❌ Faqat raqam kiriting (kunlar soni):"})
+            target_id = state_data
+            days = int(text)
+            until = db.activate_premium(target_id, days)
+            db.set_state(user_id, None)
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                "text": f"✅ <code>{target_id}</code> ga {days} kun Plus berildi\n📅 {fmt_date(until)} gacha",
+                "parse_mode": "HTML"})
+
+        if state == "admin_plusremove_id":
+            if not text.isdigit():
+                return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                    "text": "❌ Faqat raqam kiriting (User ID):"})
+            meta = db.get_user_metadata(text)
+            meta.pop("premium_until", None)
+            db.set_user_metadata(text, meta)
+            db.set_state(user_id, None)
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                "text": f"✅ <code>{text}</code> dan Plus o'chirildi",
+                "parse_mode": "HTML"})
+
+        if state == "admin_pluscheck_id":
+            if not text.isdigit():
+                return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                    "text": "❌ Faqat raqam kiriting (User ID):"})
+            meta = db.get_user_metadata(text)
+            until = meta.get("premium_until", "")
+            prem = db.is_premium(text)
+            smm_used = db.get_daily_smm(text)
+            status = f"💎 Plus aktiv — {fmt_date(until)} gacha" if prem else "🆓 Free"
+            db.set_state(user_id, None)
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                "text": (
+                    f"👤 ID: <code>{text}</code>\n"
+                    f"📊 Tarif: {status}\n"
+                    f"📝 Bugun SMM: {smm_used} ta"
+                ), "parse_mode": "HTML"})
 
     # Default
     return JSONResponse({

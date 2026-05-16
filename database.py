@@ -54,6 +54,15 @@ class Database:
             print(f"Error updating metadata: {e}")
             return False
 
+    def set_user_metadata(self, user_id, metadata):
+        if not self.supabase: return False
+        try:
+            self.supabase.table("users").update({"metadata": metadata}).eq("user_id", str(user_id)).execute()
+            return True
+        except Exception as e:
+            print(f"Error setting metadata: {e}")
+            return False
+
     def get_all_users(self):
         if not self.supabase: return []
         try:
