@@ -459,6 +459,31 @@ async def handle_callback_query(query: dict):
                 text="🔍 <b>Plus tekshirish</b>\n\nFoydalanuvchi ID sini yuboring:\n<i>Misol: 123456789</i>",
                 parse_mode="HTML")
 
+        elif data == "admin_userlist":
+            users = db.get_all_users_info()
+            if not users:
+                await tg("sendMessage", chat_id=chat_id, text="👤 Hozirda foydalanuvchilar yo'q.")
+            else:
+                lines = [f"👤 <b>Barcha foydalanuvchilar ({len(users)} ta):</b>\n"]
+                for u in users:
+                    name = f"@{u['username']}" if u['username'] else "—"
+                    badge = "💎" if u['is_plus'] else "🆓"
+                    lines.append(f"{badge} <code>{u['user_id']}</code> | {name} | {u['join_date']}")
+                text_out = "\n".join(lines)
+                for i in range(0, len(text_out), 4000):
+                    await tg("sendMessage", chat_id=chat_id, text=text_out[i:i+4000], parse_mode="HTML")
+
+        elif data == "admin_pluslist":
+            users = db.get_premium_users()
+            if not users:
+                await tg("sendMessage", chat_id=chat_id, text="👥 Hozirda faol Plus foydalanuvchilar yo'q.")
+            else:
+                lines = [f"👥 <b>Faol Plus foydalanuvchilar ({len(users)} ta):</b>\n"]
+                for u in users:
+                    name = u["username"] or "—"
+                    lines.append(f"• <code>{u['user_id']}</code> | {name} | {fmt_date(u['until'])} gacha")
+                await tg("sendMessage", chat_id=chat_id, text="\n".join(lines), parse_mode="HTML")
+
         elif data == "admin_broadcast":
             db.set_state(str(from_id), "waiting_broadcast")
             await tg("sendMessage", chat_id=chat_id,
@@ -528,7 +553,9 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
             [{"text": "➕ Plus berish", "callback_data": "admin_plusadd"},
              {"text": "➖ Plus o'chirish", "callback_data": "admin_plusremove"}],
             [{"text": "🔍 Plus tekshirish", "callback_data": "admin_pluscheck"},
-             {"text": "📢 Reklama", "callback_data": "admin_broadcast"}],
+             {"text": "👥 Plus ro'yxati", "callback_data": "admin_pluslist"}],
+            [{"text": "👤 Foydalanuvchilar", "callback_data": "admin_userlist"}],
+            [{"text": "📢 Reklama", "callback_data": "admin_broadcast"}],
         ]}
         return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
             "text": "👑 <b>Admin Panel</b>\n\nQuyidagi amallardan birini tanlang:",
@@ -960,6 +987,10 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
             if not text.isdigit():
                 return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
                     "text": "❌ Faqat raqam kiriting (User ID):"})
+            if not db.user_exists(text):
+                return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                    "text": f"❌ ID <code>{text}</code> bazada topilmadi. Foydalanuvchi botni ishga tushirgandirmi?",
+                    "parse_mode": "HTML"})
             db.set_state(user_id, "admin_plusadd_days", text)
             return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
                 "text": f"✅ ID: <code>{text}</code>\n\nNecha kun Plus berilsin?",
@@ -981,6 +1012,10 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
             if not text.isdigit():
                 return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
                     "text": "❌ Faqat raqam kiriting (User ID):"})
+            if not db.user_exists(text):
+                return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                    "text": f"❌ ID <code>{text}</code> bazada topilmadi.",
+                    "parse_mode": "HTML"})
             meta = db.get_user_metadata(text)
             meta.pop("premium_until", None)
             db.set_user_metadata(text, meta)
@@ -993,6 +1028,10 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
             if not text.isdigit():
                 return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
                     "text": "❌ Faqat raqam kiriting (User ID):"})
+            if not db.user_exists(text):
+                return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                    "text": f"❌ ID <code>{text}</code> bazada topilmadi.",
+                    "parse_mode": "HTML"})
             meta = db.get_user_metadata(text)
             until = meta.get("premium_until", "")
             prem = db.is_premium(text)

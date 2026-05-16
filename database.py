@@ -72,6 +72,29 @@ class Database:
             print(f"Error fetching users: {e}")
             return []
 
+    def get_all_users_info(self):
+        if not self.supabase: return []
+        from datetime import date
+        today = str(date.today())
+        try:
+            res = self.supabase.table("users").select("user_id, username, join_date, metadata").execute()
+            result = []
+            for row in (res.data or []):
+                meta = row.get("metadata") or {}
+                until = meta.get("premium_until", "")
+                is_plus = bool(until) and until >= today
+                result.append({
+                    "user_id": row["user_id"],
+                    "username": row.get("username", ""),
+                    "join_date": row.get("join_date", "")[:10],
+                    "is_plus": is_plus,
+                    "until": until,
+                })
+            return result
+        except Exception as e:
+            print(f"Error fetching users info: {e}")
+            return []
+
     def log_stats(self, user_id, service_type):
         if not self.supabase: return
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -122,6 +145,35 @@ class Database:
         meta["smm_count"] = meta.get("smm_count", 0) + 1
         self.update_user_metadata(user_id, meta)
         return meta["smm_count"]
+
+    def user_exists(self, user_id):
+        if not self.supabase: return False
+        try:
+            res = self.supabase.table("users").select("user_id").eq("user_id", str(user_id)).execute()
+            return bool(res.data)
+        except:
+            return False
+
+    def get_premium_users(self):
+        if not self.supabase: return []
+        from datetime import date
+        today = str(date.today())
+        try:
+            res = self.supabase.table("users").select("user_id, username, metadata").execute()
+            result = []
+            for row in (res.data or []):
+                meta = row.get("metadata") or {}
+                until = meta.get("premium_until", "")
+                if until and until >= today:
+                    result.append({
+                        "user_id": row["user_id"],
+                        "username": row.get("username", ""),
+                        "until": until
+                    })
+            return result
+        except Exception as e:
+            print(f"Error getting premium users: {e}")
+            return []
 
     def get_state(self, user_id):
         if not self.supabase:
