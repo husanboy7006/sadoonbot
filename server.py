@@ -338,6 +338,19 @@ async def _cleanup_file(path, delay=60):
 async def bg_shazam(chat_id):
     await tg_send(chat_id, "❌ Shazam vaqtincha ishlamaydi.")
 
+async def bg_mix_clip(chat_id, user_id, p, a, v):
+    try:
+        await mixer.mix_image_audio(p, a, v)
+        file_url = f"{BASE_URL}/output/{os.path.basename(v)}"
+        asyncio.create_task(_cleanup_file(v, 300))
+        db.log_stats(user_id, "mix")
+        await tg("sendVideo", chat_id=chat_id, video=file_url, supports_streaming=True)
+    except Exception as e:
+        await tg_send(chat_id, f"❌ Klip yaratishda xatolik: {str(e)[:200]}")
+    finally:
+        for f in [p, a]:
+            if os.path.exists(f): os.remove(f)
+
 async def bg_download(chat_id, user_id, url):
     filename = f"v_{uuid.uuid4()}.mp4"
     output = f"output/{filename}"
@@ -1103,12 +1116,18 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
             "text": "✅ Chekingiz adminga yuborildi!\n⏳ Tez orada plus faollashtiriladi."
         })
 
-    if state == "waiting_clip_photo" and photo:
+    if state == "waiting_clip_photo":
+        if not photo:
+            return JSONResponse({
+                "method": "sendMessage", "chat_id": chat_id,
+                "text": "🖼️ Iltimos, rasm (foto) yuboring."
+            })
         photo_id = photo[-1]["file_id"]
         db.set_state(user_id, "waiting_clip_audio", photo_id)
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
-            "text": "🎵 Endi audio (musiqa) yuboring."
+            "text": "🎵 Endi audio yuboring.\n\n📎 Audio fayl <b>yoki</b> TikTok/Instagram/YouTube havolasi yuborishingiz mumkin.",
+            "parse_mode": "HTML"
         })
 
     if state == "waiting_clip_audio":
@@ -1117,37 +1136,49 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         p = f"temp/p_{uuid.uuid4()}.jpg"
         a = f"temp/a_{uuid.uuid4()}.mp3"
         v = f"output/v_{uuid.uuid4()}.mp4"
+        tmp_v = f"temp/tv_{uuid.uuid4()}.mp4"
         try:
             await tg_download(photo_id, p)
+
             if audio:
+                # To'g'ridan-to'g'ri audio fayl
                 await tg_download(audio["file_id"], a)
+                audio_ok = os.path.exists(a) and os.path.getsize(a) > 100
             elif text:
                 urls = re.findall(r'https?://[^\s]+', text)
                 if not urls:
-                    return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "❌ Audio fayl yoki havola yuboring."})
-                ok = await asyncio.wait_for(mixer.download_audio(urls[0].strip('.,()!?'), a), timeout=55)
-                if ok:
-                    ok = await mixer.ensure_mp3(a)
-                if not ok:
-                    if os.path.exists(a): os.remove(a)
                     return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
-                        "text": "❌ Musiqa yuklab bo'lmadi. Audio faylni to'g'ridan-to'g'ri yuboring."})
-
+                        "text": "❌ Havola topilmadi. Audio fayl yoki link yuboring."})
+                url = urls[0].strip('.,()!?')
+                # Video yuklab, audio ajratib olamiz
+                downloaded = await asyncio.wait_for(
+                    mixer.download_video(url, tmp_v), timeout=55
+                )
+                if downloaded and os.path.exists(tmp_v) and os.path.getsize(tmp_v) > 1000:
+                    audio_ok = await mixer.extract_audio_from_video(tmp_v, a)
+                else:
+                    audio_ok = False
+                if os.path.exists(tmp_v): os.remove(tmp_v)
+                if not audio_ok:
+                    return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                        "text": "❌ Musiqa yuklab bo'lmadi. Boshqa havola yoki audio fayl yuboring."})
             else:
-                return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "❌ Audio fayl yoki havola yuboring."})
-            if not await mixer.mix_image_audio(p, a, v):
-                return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "❌ Klip yaratishda xatolik."})
-            file_url = f"{BASE_URL}/output/{os.path.basename(v)}"
-            background_tasks.add_task(_cleanup_file, v, 300)
-            db.log_stats(user_id, "mix")
-            return JSONResponse({"method": "sendVideo", "chat_id": chat_id, "video": file_url, "supports_streaming": True})
+                return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                    "text": "❌ Audio fayl yoki havola yuboring."})
+
+            background_tasks.add_task(bg_mix_clip, chat_id, user_id, p, a, v)
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                "text": "⏳ Klip tayyorlanmoqda, biroz kuting..."})
         except asyncio.TimeoutError:
-            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "⏰ Vaqt tugadi. Qisqaroq video sinab ko'ring."})
-        except Exception as e:
-            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": f"❌ Xato: {str(e)[:200]}"})
-        finally:
-            for f in [p, a]:
+            for f in [p, a, tmp_v]:
                 if os.path.exists(f): os.remove(f)
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                "text": "⏰ Vaqt tugadi. Qisqaroq video sinab ko'ring."})
+        except Exception as e:
+            for f in [p, a, tmp_v]:
+                if os.path.exists(f): os.remove(f)
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                "text": f"❌ Xato: {str(e)[:200]}"})
 
     if state == "waiting_broadcast" and int(user_id) == ADMIN_ID:
         db.set_state(user_id, None)
