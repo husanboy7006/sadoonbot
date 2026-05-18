@@ -236,6 +236,7 @@ async def mix_image_audio(image_path: str, audio_path: str, output_path: str):
     try:
         # -preset ultrafast va -crf 28 tezlikni oshirish uchun
         cmd = [ffmpeg_binary, "-y", "-loop", "1", "-i", image_path, "-i", audio_path,
+               "-map", "0:v:0", "-map", "1:a:0",
                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28", "-b:v", "800k",
                "-tune", "stillimage", "-c:a", "aac", "-b:a", "128k", "-pix_fmt", "yuv420p",
                "-shortest", output_path]
