@@ -268,7 +268,7 @@ async def ensure_mp3(path: str) -> bool:
     return False
 
 async def download_audio_raw(url: str, output_path: str) -> bool:
-    """URL dan bestaudio yuklab, asl formatda saqlash (postprocessor yo'q)"""
+    """URL dan bestaudio yuklab, AAC formatga convert qilish"""
     import glob
     tmp_base = output_path + ".ytdlp"
     try:
@@ -279,23 +279,37 @@ async def download_audio_raw(url: str, output_path: str) -> bool:
             'ffmpeg_location': ffmpeg_binary,
             'quiet': True,
             'no_warnings': True,
-            'ignoreerrors': False,
         }
         def _run():
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([url])
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(_executor, _run)
+
         files = glob.glob(tmp_base + '.*')
-        if not files:
+        if not files or os.path.getsize(files[0]) < 500:
+            for f in files:
+                try: os.remove(f)
+                except: pass
             return False
+
         src = files[0]
-        if os.path.getsize(src) < 500:
-            os.remove(src)
-            return False
-        os.rename(src, output_path)
-        print(f"[+] Audio raw yuklandi: {output_path}")
-        return True
+        print(f"[*] Yuklab olindi: {src} ({os.path.getsize(src)} bytes), AAC ga convert qilinmoqda...")
+
+        # FFmpeg bilan to'g'ridan-to'g'ri AAC ga convert qilamiz
+        cmd = [ffmpeg_binary, "-y", "-i", src,
+               "-vn", "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
+               output_path]
+        proc = await asyncio.create_subprocess_exec(*cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        _, stderr = await proc.communicate()
+        try: os.remove(src)
+        except: pass
+
+        if proc.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 500:
+            print(f"[+] Audio AAC ga convert qilindi: {output_path}")
+            return True
+        print(f"[!] AAC convert failed: {stderr.decode()[-300:]}")
+        return False
     except Exception as e:
         print(f"[!] download_audio_raw error: {e}")
         for f in glob.glob(tmp_base + '.*'):

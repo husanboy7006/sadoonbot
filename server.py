@@ -1134,14 +1134,14 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         photo_id = state_data
         db.set_state(user_id, None)
         p = f"temp/p_{uuid.uuid4()}.jpg"
-        a = f"temp/a_{uuid.uuid4()}.mp3"
         v = f"output/v_{uuid.uuid4()}.mp4"
         tmp_v = f"temp/tv_{uuid.uuid4()}.mp4"
         try:
             await tg_download(photo_id, p)
 
             if audio:
-                # To'g'ridan-to'g'ri audio fayl
+                # To'g'ridan-to'g'ri audio fayl — asl formatda yuklaymiz
+                a = f"temp/a_{uuid.uuid4()}.aac"
                 await tg_download(audio["file_id"], a)
                 audio_ok = os.path.exists(a) and os.path.getsize(a) > 100
             elif text:
@@ -1150,7 +1150,8 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
                     return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
                         "text": "❌ Havola topilmadi. Audio fayl yoki link yuboring."})
                 url = urls[0].strip('.,()!?')
-                # bestaudio formatda yuklaymiz (audio stream kafolatlanadi)
+                a = f"temp/a_{uuid.uuid4()}.aac"
+                # bestaudio yuklab, AAC ga convert qilamiz
                 audio_ok = await asyncio.wait_for(
                     mixer.download_audio_raw(url, a), timeout=55
                 )
