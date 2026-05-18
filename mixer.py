@@ -232,25 +232,24 @@ async def get_cobalt_url_custom(url, api_url, mode):
     return None
 
 async def mix_image_audio(image_path: str, audio_path: str, output_path: str):
-    print(f"[*] Mixing image + audio (async) -> {output_path}")
-    try:
-        # -preset ultrafast va -crf 28 tezlikni oshirish uchun
-        cmd = [ffmpeg_binary, "-y", "-loop", "1", "-i", image_path, "-i", audio_path,
-               "-map", "0:v:0", "-map", "1:a:0",
-               "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28", "-b:v", "800k",
-               "-tune", "stillimage", "-c:a", "aac", "-b:a", "128k", "-pix_fmt", "yuv420p",
-               "-shortest", output_path]
-        
-        process = await asyncio.create_subprocess_exec(*cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        stdout, stderr = await process.communicate()
-        
-        if process.returncode != 0:
-            print(f"[!] FFmpeg error: {stderr.decode()}")
-            raise Exception("Video yasashda xatolik yuz berdi (FFmpeg error).")
-        return True
-    except Exception as e:
-        print(f"[!] Mix error: {e}")
-        raise e
+    """Rasm + audio/video fayl → klip (video fayldan audio stream oladi)"""
+    print(f"[*] Mixing: {image_path} + {audio_path} -> {output_path}")
+    cmd = [ffmpeg_binary, "-y",
+           "-loop", "1", "-i", image_path,
+           "-i", audio_path,
+           "-map", "0:v:0", "-map", "1:a:0",
+           "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+           "-tune", "stillimage",
+           "-c:a", "aac", "-b:a", "128k",
+           "-pix_fmt", "yuv420p",
+           "-shortest", output_path]
+    process = await asyncio.create_subprocess_exec(*cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    stdout, stderr = await process.communicate()
+    if process.returncode != 0:
+        err = stderr.decode()[-300:]
+        print(f"[!] FFmpeg error: {err}")
+        raise Exception(f"Video yasashda xatolik (FFmpeg):\n{err[-150:]}")
+    return True
 
 async def ensure_mp3(path: str) -> bool:
     """Istalgan audio/video faylni mp3 ga o'tkazish"""
