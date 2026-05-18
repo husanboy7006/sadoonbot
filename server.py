@@ -1126,8 +1126,13 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
                 if not urls:
                     return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "❌ Audio fayl yoki havola yuboring."})
                 ok = await asyncio.wait_for(mixer.download_audio(urls[0].strip('.,()!?'), a), timeout=55)
+                if ok:
+                    ok = await mixer.ensure_mp3(a)
                 if not ok:
-                    return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "❌ Musiqa yuklab bo'lmadi."})
+                    if os.path.exists(a): os.remove(a)
+                    return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                        "text": "❌ Musiqa yuklab bo'lmadi. Audio faylni to'g'ridan-to'g'ri yuboring."})
+
             else:
                 return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": "❌ Audio fayl yoki havola yuboring."})
             if not await mixer.mix_image_audio(p, a, v):

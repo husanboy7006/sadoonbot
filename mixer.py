@@ -251,6 +251,22 @@ async def mix_image_audio(image_path: str, audio_path: str, output_path: str):
         print(f"[!] Mix error: {e}")
         raise e
 
+async def ensure_mp3(path: str) -> bool:
+    """Istalgan audio/video faylni mp3 ga o'tkazish"""
+    if not os.path.exists(path) or os.path.getsize(path) < 500:
+        return False
+    tmp = path + ".tmp.mp3"
+    cmd = [ffmpeg_binary, "-y", "-i", path, "-vn", "-acodec", "libmp3lame",
+           "-ab", "192k", "-ar", "44100", tmp]
+    proc = await asyncio.create_subprocess_exec(*cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    _, stderr = await proc.communicate()
+    if proc.returncode == 0 and os.path.exists(tmp) and os.path.getsize(tmp) > 500:
+        os.replace(tmp, path)
+        return True
+    if os.path.exists(tmp): os.remove(tmp)
+    print(f"[!] ensure_mp3 failed: {stderr.decode()[-200:]}")
+    return False
+
 async def compress_video(input_path: str, output_path: str):
     """Katta videoni 720p ga tushirib, 1 ta yadroda tezkor siqish"""
     print(f"[*] Compressing video (optimized): {input_path}")
