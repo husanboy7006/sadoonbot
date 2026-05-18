@@ -269,6 +269,7 @@ async def mix_image_audio(image_path: str, audio_path: str, output_path: str):
     cmd = [ffmpeg_binary, "-y",
            "-loop", "1", "-i", image_path,
            "-i", audio_path,
+           "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
            "-tune", "stillimage",
            "-c:a", "aac", "-b:a", "128k",
