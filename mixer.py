@@ -14,9 +14,6 @@ if os.path.exists("ffmpeg.exe"): ffmpeg_binary = os.path.abspath("ffmpeg.exe")
 elif shutil.which("ffmpeg"): ffmpeg_binary = shutil.which("ffmpeg")
 AudioSegment.converter = ffmpeg_binary
 
-# [STRATEGY 1] - RapidAPI va boshqa uchinchi tomon API-lari (Ehtiyoj bo'lsa)
-# Hozircha Cobalt va yt-dlp ni kuchaytiramiz
-
 async def download_tiktok_tikwm(url: str):
     print(f"[*] TikTok (TikWM): {url[:30]}...")
     try:
@@ -32,7 +29,7 @@ async def download_tiktok_tikwm(url: str):
 
 async def download_audio(url: str, output_path: str):
     print(f"[*] Audio yuklash: {url[:30]}...")
-    
+
     # 1. TikTok uchun maxsus TikWM
     if "tiktok.com" in url:
         v_url = await download_tiktok_tikwm(url)
@@ -42,7 +39,7 @@ async def download_audio(url: str, output_path: str):
                 if os.path.exists(output_path + ".temp.mp4"): os.remove(output_path + ".temp.mp4")
                 return True
             except: pass
-            
+
     # 2. Cobalt API Fallbacks
     cobalt_mirrors = [
         "https://api.cobalt.tools/api/json",
@@ -53,10 +50,10 @@ async def download_audio(url: str, output_path: str):
     for mirror in cobalt_mirrors:
         print(f"[*] Try Cobalt Mirror: {mirror}")
         a_url = await get_cobalt_url_custom(url, mirror, "audio")
-        if a_url and await download_directly(a_url, output_path): 
+        if a_url and await download_directly(a_url, output_path):
             print("[+] Cobalt success!")
             return True
-            
+
     # 3. Yt-dlp (Instagram va barlar uchun oxirgi umid)
     print("[*] Try yt-dlp fallback...")
     return await yt_dlp_download(url, output_path, is_audio=True)
@@ -130,7 +127,7 @@ async def download_video(url: str, output_path: str):
 
 async def search_and_download_music(query: str, output_path: str):
     print(f"[*] Musiqa qidirilmoqda: {query}")
-    
+
     # 1 va 2 - Vreden va Invidious
     try:
         async with aiohttp.ClientSession() as session:
@@ -154,7 +151,7 @@ async def search_and_download_music(query: str, output_path: str):
                             v_url = f"https://www.youtube.com/watch?v={data[0]['videoId']}"
                             if await download_audio(v_url, output_path): return True
         except: pass
-    
+
     return await yt_dlp_download(f"ytsearch1:{query}", output_path, is_audio=True)
 
 async def yt_dlp_download(url, output_path, is_audio=False):
@@ -171,23 +168,21 @@ async def yt_dlp_download(url, output_path, is_audio=False):
             'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
             'extractor_args': {'youtube': {'player_clients': ['web', 'android']}}
         }
-        
-        # [IMPORTANT] - Cookies fayli bo'lsa uni ulaymiz
+
         if os.path.exists("cookies.txt"):
             print("[+] Using cookies.txt for authentication")
             ydl_opts['cookiefile'] = "cookies.txt"
-            
-        if is_audio: 
+
+        if is_audio:
             ydl_opts['postprocessors'] = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
-            
+
         def _run():
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([url])
 
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(_executor, _run)
-            
-        # Natijani tekshirish
+
         if is_audio:
             if os.path.exists(output_path + ".mp3"):
                 if os.path.exists(output_path): os.remove(output_path)
@@ -209,7 +204,7 @@ async def download_directly(url, path):
                     return False
                 with open(path, 'wb') as f:
                     while True:
-                        chunk = await response.content.read(1024*1024)  # 1MB chunks
+                        chunk = await response.content.read(1024*1024)
                         if not chunk:
                             break
                         f.write(chunk)
@@ -231,13 +226,49 @@ async def get_cobalt_url_custom(url, api_url, mode):
         print(f"[!] Cobalt {api_url} error: {e}")
     return None
 
+async def download_audio_raw(url: str, out_base: str) -> str | None:
+    """URL dan bestaudio yuklab, orijinal formatda saqlash. Fayl yo'lini qaytaradi."""
+    import glob
+    tmp_base = out_base + ".ytdlp"
+    try:
+        import yt_dlp
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': tmp_base + '.%(ext)s',
+            'ffmpeg_location': ffmpeg_binary,
+            'quiet': True,
+            'no_warnings': True,
+        }
+        def _run():
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(_executor, _run)
+        files = glob.glob(tmp_base + '.*')
+        if not files or os.path.getsize(files[0]) < 500:
+            for f in files:
+                try: os.remove(f)
+                except: pass
+            return None
+        src = files[0]
+        ext = os.path.splitext(src)[1]   # .m4a, .webm, .opus ...
+        actual = out_base + ext
+        os.rename(src, actual)
+        print(f"[+] Audio yuklandi: {actual} ({os.path.getsize(actual)} bytes)")
+        return actual
+    except Exception as e:
+        print(f"[!] download_audio_raw error: {e}")
+        for f in glob.glob(tmp_base + '.*'):
+            try: os.remove(f)
+            except: pass
+        return None
+
 async def mix_image_audio(image_path: str, audio_path: str, output_path: str):
-    """Rasm + audio/video fayl → klip (video fayldan audio stream oladi)"""
+    """Rasm + audio/video fayl → video klip"""
     print(f"[*] Mixing: {image_path} + {audio_path} -> {output_path}")
     cmd = [ffmpeg_binary, "-y",
            "-loop", "1", "-i", image_path,
            "-i", audio_path,
-           "-map", "0:v:0", "-map", "1:a:0",
            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
            "-tune", "stillimage",
            "-c:a", "aac", "-b:a", "128k",
@@ -246,8 +277,8 @@ async def mix_image_audio(image_path: str, audio_path: str, output_path: str):
     process = await asyncio.create_subprocess_exec(*cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     stdout, stderr = await process.communicate()
     if process.returncode != 0:
-        err = stderr.decode()[-300:]
-        print(f"[!] FFmpeg error: {err}")
+        err = stderr.decode()[-400:]
+        print(f"[!] FFmpeg mix error: {err}")
         raise Exception(f"Video yasashda xatolik (FFmpeg):\n{err[-150:]}")
     return True
 
@@ -267,68 +298,15 @@ async def ensure_mp3(path: str) -> bool:
     print(f"[!] ensure_mp3 failed: {stderr.decode()[-200:]}")
     return False
 
-async def download_audio_raw(url: str, output_path: str) -> bool:
-    """URL dan bestaudio yuklab, AAC formatga convert qilish"""
-    import glob
-    tmp_base = output_path + ".ytdlp"
-    try:
-        import yt_dlp
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'outtmpl': tmp_base + '.%(ext)s',
-            'ffmpeg_location': ffmpeg_binary,
-            'quiet': True,
-            'no_warnings': True,
-        }
-        def _run():
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(_executor, _run)
-
-        files = glob.glob(tmp_base + '.*')
-        if not files or os.path.getsize(files[0]) < 500:
-            for f in files:
-                try: os.remove(f)
-                except: pass
-            return False
-
-        src = files[0]
-        print(f"[*] Yuklab olindi: {src} ({os.path.getsize(src)} bytes), AAC ga convert qilinmoqda...")
-
-        # FFmpeg bilan m4a (MP4 container) ga convert qilamiz — seeking uchun
-        cmd = [ffmpeg_binary, "-y", "-i", src,
-               "-vn", "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
-               "-f", "mp4", "-movflags", "+faststart",
-               output_path]
-        proc = await asyncio.create_subprocess_exec(*cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        _, stderr = await proc.communicate()
-        try: os.remove(src)
-        except: pass
-
-        if proc.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 500:
-            print(f"[+] Audio AAC ga convert qilindi: {output_path}")
-            return True
-        print(f"[!] AAC convert failed: {stderr.decode()[-300:]}")
-        return False
-    except Exception as e:
-        print(f"[!] download_audio_raw error: {e}")
-        for f in glob.glob(tmp_base + '.*'):
-            try: os.remove(f)
-            except: pass
-        return False
-
 async def compress_video(input_path: str, output_path: str):
     """Katta videoni 720p ga tushirib, 1 ta yadroda tezkor siqish"""
     print(f"[*] Compressing video (optimized): {input_path}")
     try:
-        # Threads 1 va scale 720p RAM ni kam sarflaydi va tezroq bitadi
-        cmd = [ffmpeg_binary, "-y", "-i", input_path, "-vcodec", "libx264", "-preset", "ultrafast", 
+        cmd = [ffmpeg_binary, "-y", "-i", input_path, "-vcodec", "libx264", "-preset", "ultrafast",
                "-crf", "30", "-vf", "scale='min(720,iw)':-2", "-threads", "1",
                "-acodec", "aac", "-b:a", "128k", output_path]
         process = await asyncio.create_subprocess_exec(*cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:
-            # 5 daqiqali timeout
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
             if process.returncode != 0:
                 print(f"[!] Compression failed: {stderr.decode()}")
@@ -342,4 +320,3 @@ async def compress_video(input_path: str, output_path: str):
     except Exception as e:
         print(f"[!] Compression error: {e}")
         return False
-
