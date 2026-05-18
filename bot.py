@@ -5,7 +5,7 @@ import uuid
 import re
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import Message, FSInputFile
+from aiogram.types import Message, FSInputFile, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -52,6 +52,8 @@ class MixState(StatesGroup):
     waiting_clip_photo = State()
     waiting_clip_audio = State()
     waiting_feedback = State()
+    # AI Suhbat
+    waiting_chat = State()
     # SMM states
     smm_post = State()
     smm_reels = State()
@@ -63,6 +65,100 @@ class MixState(StatesGroup):
     waiting_broadcast = State()
 
 # --- KEYBOARDS ---
+from calc_parser import safe_calc, format_result, CalcError
+import aiohttp as _aiohttp
+
+user_calc_expr: dict = {}
+user_calc_history: dict = {}
+user_calc_awaiting: dict = {}
+
+def _b(t, d): return InlineKeyboardButton(text=t, callback_data=d)
+
+def make_calc_kb(mode="basic"):
+    if mode == "science":
+        rows = [
+            [_b("sin", "c_sin("), _b("cos", "c_cos("), _b("tan", "c_tan("), _b("⌫", "c_back")],
+            [_b("log", "c_log("), _b("ln", "c_ln("), _b("√", "c_sqrt("), _b("x²", "c_^2")],
+            [_b("π", "c_π"), _b("e", "c_e"), _b("(", "c_("), _b(")", "c_)")],
+            [_b("xⁿ", "c_^"), _b("1/x", "c_1/x"), _b("n!", "c_!"), _b("C", "c_C")],
+            [_b("7", "c_7"), _b("8", "c_8"), _b("9", "c_9"), _b("÷", "c_÷")],
+            [_b("4", "c_4"), _b("5", "c_5"), _b("6", "c_6"), _b("×", "c_×")],
+            [_b("1", "c_1"), _b("2", "c_2"), _b("3", "c_3"), _b("−", "c_−")],
+            [_b("🔢", "c_mode_basic"), _b("0", "c_0"), _b(".", "c_."), _b("=", "c_=")],
+        ]
+    else:
+        rows = [
+            [_b("C", "c_C"), _b("⌫", "c_back"), _b("%", "c_%"), _b("÷", "c_÷")],
+            [_b("7", "c_7"), _b("8", "c_8"), _b("9", "c_9"), _b("×", "c_×")],
+            [_b("4", "c_4"), _b("5", "c_5"), _b("6", "c_6"), _b("−", "c_−")],
+            [_b("1", "c_1"), _b("2", "c_2"), _b("3", "c_3"), _b("+", "c_+")],
+            [_b("🔬 Ilmiy", "c_mode_science"), _b("0", "c_0"), _b(".", "c_."), _b("=", "c_=")],
+            [_b("(", "c_("), _b(")", "c_)"), _b("📜", "c_history"), _b("🏠", "c_menu")],
+        ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+def make_result_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [_b("🔢 Yana hisoblash", "c_mode_basic"), _b("📜 Tarix", "c_history")],
+        [_b("💱 Valyuta", "c_open_currency"), _b("📏 Birliklar", "c_open_convert")],
+        [_b("🏠 Bosh menyu", "c_menu")],
+    ])
+
+def make_history_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [_b("🗑 Tarixni tozalash", "c_clear_history"), _b("🔢 Kalkulator", "c_mode_basic")],
+        [_b("🏠 Bosh menyu", "c_menu")],
+    ])
+
+def make_currency_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [_b("🇺🇸 USD → UZS", "c_cur_USD_UZS"), _b("🇺🇿 UZS → USD", "c_cur_UZS_USD")],
+        [_b("🇪🇺 EUR → UZS", "c_cur_EUR_UZS"), _b("🇷🇺 RUB → UZS", "c_cur_RUB_UZS")],
+        [_b("🔢 Kalkulator", "c_mode_basic"), _b("🏠 Yopish", "c_close")],
+    ])
+
+def make_convert_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [_b("km ↔ mi", "c_conv_km_mi"), _b("kg ↔ lb", "c_conv_kg_lb")],
+        [_b("°C ↔ °F", "c_conv_c_f"), _b("m ↔ ft", "c_conv_m_ft")],
+        [_b("🔢 Kalkulator", "c_mode_basic"), _b("🏠 Yopish", "c_close")],
+    ])
+
+async def get_currency_rates():
+    try:
+        async with _aiohttp.ClientSession() as s:
+            async with s.get("https://cbu.uz/uz/arkhiv-kursov-valyut/json/", timeout=_aiohttp.ClientTimeout(total=10)) as r:
+                data = await r.json()
+                return {item["Ccy"]: float(item["Rate"]) for item in data}
+    except:
+        return {}
+
+async def convert_currency(amount, from_cur, to_cur):
+    rates = await get_currency_rates()
+    if not rates: raise Exception("CBU serveriga ulanib bo'lmadi")
+    if from_cur == "UZS":
+        if to_cur not in rates: raise Exception(f"{to_cur} topilmadi")
+        return amount / rates[to_cur]
+    elif to_cur == "UZS":
+        if from_cur not in rates: raise Exception(f"{from_cur} topilmadi")
+        return amount * rates[from_cur]
+    else:
+        if from_cur not in rates or to_cur not in rates: raise Exception("Kurs topilmadi")
+        return amount * rates[from_cur] / rates[to_cur]
+
+def convert_unit(amount, conv_type):
+    c = {
+        "km_mi": (lambda x: x * 0.621371, lambda x: x / 0.621371, "km", "mi"),
+        "kg_lb": (lambda x: x * 2.20462, lambda x: x / 2.20462, "kg", "lb"),
+        "c_f":   (lambda x: x * 9/5 + 32, lambda x: (x-32) * 5/9, "°C", "°F"),
+        "m_ft":  (lambda x: x * 3.28084, lambda x: x / 3.28084, "m", "ft"),
+    }
+    if conv_type not in c: raise ValueError("Noma'lum tur")
+    fwd, bwd, u1, u2 = c[conv_type]
+    return (f"📏 <b>Birlik o'zgartirish</b>\n\n"
+            f"<code>{amount:,.2f} {u1}</code> = <b>{fwd(amount):,.4f} {u2}</b>\n"
+            f"<code>{amount:,.2f} {u2}</code> = <b>{bwd(amount):,.4f} {u1}</b>")
+
 SMM_FREE_DAILY = int(os.getenv("FREE_DAILY_LIMIT", "3"))
 SMM_PREMIUM_DAILY = int(os.getenv("PREMIUM_DAILY_LIMIT", "30"))
 SMM_MAX_TOKENS = int(os.getenv("MAX_TOKENS", "5000"))
@@ -81,9 +177,18 @@ main_keyboard = types.ReplyKeyboardMarkup(
 free_keyboard = types.ReplyKeyboardMarkup(
     keyboard=[
         [types.KeyboardButton(text="📥 Yuklab olish"), types.KeyboardButton(text="🌐 Tilmoch AI")],
+        [types.KeyboardButton(text="🤖 AI Suhbat"), types.KeyboardButton(text="🧮 Kalkulator")],
         [types.KeyboardButton(text="🎬 Klip Yaratish")],
         [types.KeyboardButton(text="🔍 Shazam")],
         [types.KeyboardButton(text="🔙 Orqaga")]
+    ],
+    resize_keyboard=True
+)
+
+chat_keyboard = types.ReplyKeyboardMarkup(
+    keyboard=[
+        [types.KeyboardButton(text="🗑 Suhbatni tozala")],
+        [types.KeyboardButton(text="🔙 Chiqish")]
     ],
     resize_keyboard=True
 )
@@ -283,18 +388,43 @@ async def trans_start(message: Message, state: FSMContext):
 
 @dp.message(MixState.waiting_translate, F.text)
 async def handle_translate(message: Message, state: FSMContext):
+    groq_key = os.getenv("GROQ_KEY")
+    if not groq_key:
+        await message.answer("❌ AI sozlanmagan.")
+        await state.clear()
+        return
+    wait_msg = await message.answer("⏳ Tarjima qilinmoqda...")
     try:
-        if not gemini_client:
-            return await message.answer("❌ AI sozlanmagan.")
+        from groq import AsyncGroq
+        client = AsyncGroq(api_key=groq_key)
+        system = (
+            "Sen Tilmoch AI — O'zbek, Rus va Xitoy tillari o'rtasida tezkor tarjimon.\n"
+            "Qoidalar: kirish gaplari yozma, darhol tarjima qil.\n"
+            "Til aniqlash: Latin/o'zbek harflar → Ruscha VA Xitoycha tarjima.\n"
+            "Kirill/rus harflar → O'zbekcha tarjima.\n"
+            "Xitoy ierogliflari → O'zbekcha tarjima.\n"
+            "Format (o'zbek uchun):\n📝 Original: [matn]\n🇷🇺 Ruscha: [tarjima]\n🇨🇳 Xitoycha: [tarjima]\n🔤 Talaffuz: [pinyin]\n"
+            "Format (rus uchun):\n📝 Original: [matn]\n🇺🇿 O'zbekcha: [tarjima]"
+        )
         res = await asyncio.wait_for(
-            gemini_client.aio.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=f"Siz professional tarjimon va tilshunosiz. Ushbu matnni tarjima qiling va qisqacha izoh bering: {message.text}"
-            ), timeout=30)
-        await message.answer(res.text)
+            client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": message.text}
+                ],
+                max_tokens=1000,
+            ), timeout=30
+        )
+        reply = res.choices[0].message.content
+        try: await wait_msg.delete()
+        except: pass
+        await message.answer(reply)
         db.log_stats(message.from_user.id, "translate")
+    except asyncio.TimeoutError:
+        await wait_msg.edit_text("⏰ Vaqt tugadi. Qaytadan urinib ko'ring.")
     except Exception as e:
-        await message.answer(f"❌ Xato: {e}")
+        await wait_msg.edit_text(f"❌ Xato: {str(e)[:200]}")
     await state.clear()
 
 @dp.message(F.text == "📥 Yuklab olish")
@@ -327,6 +457,207 @@ async def handle_download(message: Message, state: FSMContext):
 @dp.message(F.text == "🔍 Shazam")
 async def shazam_start(message: Message):
     await message.answer("❌ Shazam vaqtincha ishlamaydi (paket muammosi).")
+
+def make_calc_menu_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [_b("🔢 Kalkulator", "c_mode_basic"), _b("🔬 Ilmiy", "c_mode_science")],
+        [_b("💱 Valyuta", "c_open_currency"), _b("📏 Birliklar", "c_open_convert")],
+        [_b("📜 Tarix", "c_history")],
+    ])
+
+@dp.message(F.text == "🧮 Kalkulator")
+async def calc_open(message: Message):
+    user_calc_expr[message.from_user.id] = ""
+    await message.answer(
+        "🧮 <b>CalcBot</b>\n\nQuyidagi tugmalardan birini tanlang:",
+        parse_mode="HTML", reply_markup=make_calc_menu_kb()
+    )
+
+@dp.callback_query(F.data.startswith("c_"))
+async def calc_callback(query: CallbackQuery):
+    uid = query.from_user.id
+    action = query.data[2:]
+    expr = user_calc_expr.get(uid, "")
+
+    # --- Navigatsiya ---
+    if action == "close":
+        await query.message.delete()
+        await query.answer()
+        return
+
+    if action == "menu":
+        user_calc_expr[uid] = ""
+        await query.message.edit_text(
+            "🧮 <b>CalcBot</b>\n\nQuyidagi tugmalardan birini tanlang:",
+            parse_mode="HTML", reply_markup=make_calc_menu_kb())
+        await query.answer(); return
+
+    if action == "mode_basic":
+        user_calc_expr[uid] = expr
+        await query.message.edit_text(
+            f"🧮 <b>Kalkulator</b>\n\n<code>{expr or '0'}</code>",
+            parse_mode="HTML", reply_markup=make_calc_kb("basic"))
+        await query.answer(); return
+
+    if action == "mode_science":
+        user_calc_expr[uid] = expr
+        await query.message.edit_text(
+            f"🔬 <b>Ilmiy kalkulator</b>\n\n<code>{expr or '0'}</code>",
+            parse_mode="HTML", reply_markup=make_calc_kb("science"))
+        await query.answer(); return
+
+    if action == "history":
+        hist = user_calc_history.get(uid, [])
+        if not hist:
+            text = "📜 <b>Tarix</b>\n\nHali hisoblashlar yo'q."
+        else:
+            lines = [f"{i+1}. <code>{e}</code> = <b>{r}</b>" for i, (e, r) in enumerate(hist)]
+            text = "📜 <b>Oxirgi hisoblashlar:</b>\n\n" + "\n".join(lines)
+        await query.message.edit_text(text, parse_mode="HTML", reply_markup=make_history_kb())
+        await query.answer(); return
+
+    if action == "clear_history":
+        user_calc_history[uid] = []
+        await query.message.edit_text("🗑 <b>Tarix tozalandi!</b>",
+            parse_mode="HTML", reply_markup=make_history_kb())
+        await query.answer(); return
+
+    if action == "open_currency":
+        await query.message.edit_text(
+            "💱 <b>Valyuta Konvertori</b>\n\nYo'nalishni tanlang:",
+            parse_mode="HTML", reply_markup=make_currency_kb())
+        await query.answer(); return
+
+    if action == "open_convert":
+        await query.message.edit_text(
+            "📏 <b>Birlik O'zgartirish</b>\n\nYo'nalishni tanlang:",
+            parse_mode="HTML", reply_markup=make_convert_kb())
+        await query.answer(); return
+
+    if action.startswith("cur_"):
+        parts = action[4:].split("_")
+        from_cur, to_cur = parts[0], parts[1]
+        user_calc_awaiting[uid] = {"type": "currency", "from": from_cur, "to": to_cur}
+        await query.message.edit_text(
+            f"💱 <b>{from_cur} → {to_cur}</b>\n\nMiqdorni yozing (masalan: <code>100</code>):",
+            parse_mode="HTML")
+        await query.answer(); return
+
+    if action.startswith("conv_"):
+        conv_type = action[5:]
+        user_calc_awaiting[uid] = {"type": "convert", "conv_type": conv_type}
+        labels = {"km_mi": "km ↔ mi", "kg_lb": "kg ↔ lb", "c_f": "°C ↔ °F", "m_ft": "m ↔ ft"}
+        await query.message.edit_text(
+            f"📏 <b>{labels.get(conv_type, conv_type)}</b>\n\nMiqdorni yozing (masalan: <code>100</code>):",
+            parse_mode="HTML")
+        await query.answer(); return
+
+    # --- Kalkulator tugmalari ---
+    if action == "C":
+        expr = ""
+    elif action == "back":
+        expr = expr[:-1]
+    elif action == "=":
+        if not expr:
+            await query.answer(); return
+        try:
+            result = safe_calc(expr)
+            formatted = format_result(result)
+            hist = user_calc_history.get(uid, [])
+            hist.append((expr, formatted))
+            if len(hist) > 10: hist = hist[-10:]
+            user_calc_history[uid] = hist
+            user_calc_expr[uid] = str(result)
+            await query.message.edit_text(
+                f"🧮 <b>Natija</b>\n\n<code>{expr}</code>\n━━━━━━━━━━━━━\n✅ <b>{formatted}</b>",
+                parse_mode="HTML", reply_markup=make_result_kb())
+        except CalcError as e:
+            await query.answer(f"❌ {str(e)}", show_alert=True)
+        await query.answer(); return
+    elif action == "^2":
+        expr += "^2"
+    elif action == "1/x":
+        expr = f"1/({expr})" if expr else "1/"
+    else:
+        expr += action
+
+    user_calc_expr[uid] = expr
+    sci_funcs = ["sin", "cos", "tan", "log", "ln", "sqrt", "π"]
+    mode = "science" if any(f in expr for f in sci_funcs) else "basic"
+    title = "🔬 <b>Ilmiy kalkulator</b>" if mode == "science" else "🧮 <b>Kalkulator</b>"
+    try:
+        await query.message.edit_text(
+            f"{title}\n\n<code>{expr or '0'}</code>",
+            parse_mode="HTML", reply_markup=make_calc_kb(mode))
+    except: pass
+    await query.answer()
+
+@dp.message(F.text == "🤖 AI Suhbat")
+async def chat_start(message: Message, state: FSMContext):
+    await state.set_state(MixState.waiting_chat)
+    await state.update_data(history=[])
+    await message.answer(
+        "🤖 <b>AI Suhbat</b>\n\n"
+        "Menga istalgan savol bering — javob beraman!\n"
+        "O'zbek, Rus yoki Ingliz tilida yozishingiz mumkin.\n\n"
+        "🗑 <b>Suhbatni tozala</b> — yangi mavzu boshlash\n"
+        "🔙 <b>Chiqish</b> — menyuga qaytish",
+        parse_mode="HTML", reply_markup=chat_keyboard
+    )
+
+@dp.message(MixState.waiting_chat, F.text == "🔙 Chiqish")
+async def chat_exit(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Asosiy menyu:", reply_markup=main_keyboard)
+
+@dp.message(MixState.waiting_chat, F.text == "🗑 Suhbatni tozala")
+async def chat_clear(message: Message, state: FSMContext):
+    await state.update_data(history=[])
+    await message.answer("✅ Suhbat tozalandi. Yangi savol bering.", reply_markup=chat_keyboard)
+
+@dp.message(MixState.waiting_chat, F.text)
+async def chat_handle(message: Message, state: FSMContext):
+    from groq import AsyncGroq
+    groq_key = os.getenv("GROQ_KEY")
+    if not groq_key:
+        return await message.answer("❌ Groq API kalit topilmadi.")
+
+    data = await state.get_data()
+    history = data.get("history", [])
+
+    history.append({"role": "user", "content": message.text})
+    if len(history) > 20:
+        history = history[-20:]
+
+    wait_msg = await message.answer("⏳ Javob tayyorlanmoqda...")
+    try:
+        client = AsyncGroq(api_key=groq_key)
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": (
+                        "Sen Sadoon AI — aqlli va do'stona yordamchi. "
+                        "O'zbek, Rus va Ingliz tillarini bilasan. "
+                        "Foydalanuvchi qaysi tilda yozsa, o'sha tilda javob ber. "
+                        "Qisqa, aniq va foydali javob ber."
+                    )}
+                ] + history,
+                max_tokens=1000,
+                temperature=0.7,
+            ), timeout=30
+        )
+        reply = response.choices[0].message.content
+        history.append({"role": "assistant", "content": reply})
+        await state.update_data(history=history)
+        try:
+            await wait_msg.delete()
+        except: pass
+        await message.answer(reply, reply_markup=chat_keyboard)
+    except asyncio.TimeoutError:
+        await wait_msg.edit_text("⏰ Javob kelmadi. Qaytadan urinib ko'ring.")
+    except Exception as e:
+        await wait_msg.edit_text(f"❌ Xatolik: {str(e)[:200]}")
 
 @dp.message(F.text == "🎬 Klip Yaratish")
 async def clip_start(message: Message, state: FSMContext):
@@ -508,6 +839,40 @@ async def smm_strategy_start(message: Message, state: FSMContext):
 async def smm_strategy_handle(message: Message, state: FSMContext):
     await smm_process(message, state, "smm_strategy")
 
+
+@dp.message(F.text)
+async def calc_awaiting_handler(message: Message):
+    uid = message.from_user.id
+    awaiting = user_calc_awaiting.get(uid)
+    if not awaiting:
+        await message.answer("Asosiy menyu:", reply_markup=main_keyboard)
+        return
+    user_calc_awaiting.pop(uid, None)
+    text = message.text.strip().replace(",", "").replace(" ", "")
+    try:
+        amount = float(text)
+    except ValueError:
+        await message.answer("❌ Raqam kiriting (masalan: 100)", reply_markup=make_currency_kb())
+        return
+
+    if awaiting["type"] == "currency":
+        try:
+            result = await convert_currency(amount, awaiting["from"], awaiting["to"])
+            await message.answer(
+                f"💱 <b>Valyuta konvertatsiyasi</b>\n\n"
+                f"<code>{amount:,.2f} {awaiting['from']}</code>\n"
+                f"━━━━━━━━━━━━━\n"
+                f"✅ <b>{result:,.2f} {awaiting['to']}</b>",
+                parse_mode="HTML", reply_markup=make_result_kb())
+        except Exception as e:
+            await message.answer(f"❌ Xato: {e}", reply_markup=make_currency_kb())
+
+    elif awaiting["type"] == "convert":
+        try:
+            result = convert_unit(amount, awaiting["conv_type"])
+            await message.answer(result, parse_mode="HTML", reply_markup=make_result_kb())
+        except Exception as e:
+            await message.answer(f"❌ Xato: {e}", reply_markup=make_convert_kb())
 
 @dp.message()
 async def echo(message: Message):

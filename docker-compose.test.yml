@@ -1,0 +1,14 @@
+services:
+  sadoon-test:
+    build: .
+    container_name: sadoon_test
+    env_file:
+      - .env
+    volumes:
+      - ./temp:/app/temp
+      - ./output:/app/output
+      - ./bot.py:/app/bot.py
+      - ./server.py:/app/server.py
+      - ./database.py:/app/database.py
+      - ./mixer.py:/app/mixer.py
+    command: python -u bot.py

@@ -164,6 +164,7 @@ MAIN_KB = {
 FREE_KB = {
     "keyboard": [
         [{"text": "📥 Yuklab olish"}, {"text": "🌐 Tilmoch AI"}],
+        [{"text": "🤖 AI Suhbat"}, {"text": "🧮 Kalkulator"}],
         [{"text": "🎬 Klip Yaratish"}],
         [{"text": "🔍 Shazam"}],
         [{"text": "🔙 Orqaga"}]
@@ -189,6 +190,103 @@ SMM_KB = {
     ],
     "resize_keyboard": True
 }
+
+# --- 6b. CALCULATOR ---
+from calc_parser import safe_calc, format_result, CalcError
+
+_calc_expr: dict = {}
+_calc_history: dict = {}
+_calc_awaiting: dict = {}
+
+def _cb(t, d): return {"text": t, "callback_data": d}
+
+def _calc_kb(mode="basic"):
+    if mode == "science":
+        rows = [
+            [_cb("sin","c_sin("),_cb("cos","c_cos("),_cb("tan","c_tan("),_cb("⌫","c_back")],
+            [_cb("log","c_log("),_cb("ln","c_ln("),_cb("√","c_sqrt("),_cb("x²","c_^2")],
+            [_cb("π","c_π"),_cb("e","c_e"),_cb("(","c_("),_cb(")","c_)")],
+            [_cb("xⁿ","c_^"),_cb("1/x","c_1/x"),_cb("n!","c_!"),_cb("C","c_C")],
+            [_cb("7","c_7"),_cb("8","c_8"),_cb("9","c_9"),_cb("÷","c_÷")],
+            [_cb("4","c_4"),_cb("5","c_5"),_cb("6","c_6"),_cb("×","c_×")],
+            [_cb("1","c_1"),_cb("2","c_2"),_cb("3","c_3"),_cb("−","c_−")],
+            [_cb("🔢","c_mode_basic"),_cb("0","c_0"),_cb(".","c_."),_cb("=","c_=")],
+        ]
+    else:
+        rows = [
+            [_cb("C","c_C"),_cb("⌫","c_back"),_cb("%","c_%"),_cb("÷","c_÷")],
+            [_cb("7","c_7"),_cb("8","c_8"),_cb("9","c_9"),_cb("×","c_×")],
+            [_cb("4","c_4"),_cb("5","c_5"),_cb("6","c_6"),_cb("−","c_−")],
+            [_cb("1","c_1"),_cb("2","c_2"),_cb("3","c_3"),_cb("+","c_+")],
+            [_cb("🔬 Ilmiy","c_mode_science"),_cb("0","c_0"),_cb(".","c_."),_cb("=","c_=")],
+            [_cb("(","c_("),_cb(")","c_)"),_cb("📜","c_history"),_cb("🏠","c_menu")],
+        ]
+    return {"inline_keyboard": rows}
+
+def _calc_menu_kb():
+    return {"inline_keyboard": [
+        [_cb("🔢 Kalkulator","c_mode_basic"),_cb("🔬 Ilmiy","c_mode_science")],
+        [_cb("💱 Valyuta","c_open_currency"),_cb("📏 Birliklar","c_open_convert")],
+        [_cb("📜 Tarix","c_history")],
+    ]}
+
+def _calc_result_kb():
+    return {"inline_keyboard": [
+        [_cb("🔢 Yana hisoblash","c_mode_basic"),_cb("📜 Tarix","c_history")],
+        [_cb("💱 Valyuta","c_open_currency"),_cb("📏 Birliklar","c_open_convert")],
+        [_cb("🏠 Bosh menyu","c_menu")],
+    ]}
+
+def _calc_history_kb():
+    return {"inline_keyboard": [
+        [_cb("🗑 Tarixni tozalash","c_clear_history"),_cb("🔢 Kalkulator","c_mode_basic")],
+        [_cb("🏠 Bosh menyu","c_menu")],
+    ]}
+
+def _calc_currency_kb():
+    return {"inline_keyboard": [
+        [_cb("🇺🇸 USD → UZS","c_cur_USD_UZS"),_cb("🇺🇿 UZS → USD","c_cur_UZS_USD")],
+        [_cb("🇪🇺 EUR → UZS","c_cur_EUR_UZS"),_cb("🇷🇺 RUB → UZS","c_cur_RUB_UZS")],
+        [_cb("🏠 Bosh menyu","c_menu")],
+    ]}
+
+def _calc_convert_kb():
+    return {"inline_keyboard": [
+        [_cb("km ↔ mi","c_conv_km_mi"),_cb("kg ↔ lb","c_conv_kg_lb")],
+        [_cb("°C ↔ °F","c_conv_c_f"),_cb("m ↔ ft","c_conv_m_ft")],
+        [_cb("🏠 Bosh menyu","c_menu")],
+    ]}
+
+async def _get_rates():
+    try:
+        async with aiohttp.ClientSession() as s:
+            async with s.get("https://cbu.uz/uz/arkhiv-kursov-valyut/json/",
+                             timeout=aiohttp.ClientTimeout(total=10)) as r:
+                data = await r.json()
+                return {item["Ccy"]: float(item["Rate"]) for item in data}
+    except: return {}
+
+async def _convert_currency(amount, from_cur, to_cur):
+    rates = await _get_rates()
+    if not rates: raise Exception("CBU serveriga ulanib bo'lmadi")
+    if from_cur == "UZS":
+        return amount / rates[to_cur]
+    elif to_cur == "UZS":
+        return amount * rates[from_cur]
+    return amount * rates[from_cur] / rates[to_cur]
+
+def _convert_unit(amount, conv_type):
+    c = {
+        "km_mi":(lambda x:x*0.621371,lambda x:x/0.621371,"km","mi"),
+        "kg_lb":(lambda x:x*2.20462,lambda x:x/2.20462,"kg","lb"),
+        "c_f":(lambda x:x*9/5+32,lambda x:(x-32)*5/9,"°C","°F"),
+        "m_ft":(lambda x:x*3.28084,lambda x:x/3.28084,"m","ft"),
+    }
+    if conv_type not in c: raise ValueError("Noma'lum tur")
+    fwd,bwd,u1,u2 = c[conv_type]
+    return (f"📏 <b>Birlik o'zgartirish</b>\n\n"
+            f"<code>{amount:,.2f} {u1}</code> = <b>{fwd(amount):,.4f} {u2}</b>\n"
+            f"<code>{amount:,.2f} {u2}</code> = <b>{bwd(amount):,.4f} {u1}</b>")
 
 # --- 7. TELEGRAM HELPERS ---
 _TG_TIMEOUT = aiohttp.ClientTimeout(total=60, connect=15)
@@ -424,6 +522,107 @@ async def handle_callback_query(query: dict):
         await tg("sendMessage", chat_id=chat_id,
             text=f"✉️ <b>Javob yozing</b>\n\nID <code>{target_id}</code> ga yuboriladi:\n\n❌ Bekor: /start",
             parse_mode="HTML")
+        return JSONResponse({"ok": True})
+
+    # 🧮 Kalkulator callback
+    if data.startswith("c_"):
+        await tg("answerCallbackQuery", callback_query_id=cq_id)
+        uid = str(from_id)
+        action = data[2:]
+        expr = _calc_expr.get(uid, "")
+
+        if action == "menu":
+            _calc_expr[uid] = ""
+            await tg("editMessageText", chat_id=chat_id, message_id=msg_id,
+                text="🧮 <b>CalcBot</b>\n\nQuyidagi tugmalardan birini tanlang:",
+                parse_mode="HTML", reply_markup=_calc_menu_kb())
+        elif action == "mode_basic":
+            await tg("editMessageText", chat_id=chat_id, message_id=msg_id,
+                text=f"🧮 <b>Kalkulator</b>\n\n<code>{expr or '0'}</code>",
+                parse_mode="HTML", reply_markup=_calc_kb("basic"))
+        elif action == "mode_science":
+            await tg("editMessageText", chat_id=chat_id, message_id=msg_id,
+                text=f"🔬 <b>Ilmiy kalkulator</b>\n\n<code>{expr or '0'}</code>",
+                parse_mode="HTML", reply_markup=_calc_kb("science"))
+        elif action == "history":
+            hist = _calc_history.get(uid, [])
+            text_h = ("📜 <b>Tarix</b>\n\nHali hisoblashlar yo'q." if not hist else
+                "📜 <b>Oxirgi hisoblashlar:</b>\n\n" +
+                "\n".join(f"{i+1}. <code>{e}</code> = <b>{r}</b>" for i,(e,r) in enumerate(hist)))
+            await tg("editMessageText", chat_id=chat_id, message_id=msg_id,
+                text=text_h, parse_mode="HTML", reply_markup=_calc_history_kb())
+        elif action == "clear_history":
+            _calc_history[uid] = []
+            await tg("editMessageText", chat_id=chat_id, message_id=msg_id,
+                text="🗑 <b>Tarix tozalandi!</b>", parse_mode="HTML", reply_markup=_calc_history_kb())
+        elif action == "open_currency":
+            await tg("editMessageText", chat_id=chat_id, message_id=msg_id,
+                text="💱 <b>Valyuta Konvertori</b>\n\nYo'nalishni tanlang:",
+                parse_mode="HTML", reply_markup=_calc_currency_kb())
+        elif action == "open_convert":
+            await tg("editMessageText", chat_id=chat_id, message_id=msg_id,
+                text="📏 <b>Birlik O'zgartirish</b>\n\nYo'nalishni tanlang:",
+                parse_mode="HTML", reply_markup=_calc_convert_kb())
+        elif action.startswith("cur_"):
+            parts = action[4:].split("_")
+            from_cur, to_cur = parts[0], parts[1]
+            _calc_awaiting[uid] = {"type": "currency", "from": from_cur, "to": to_cur}
+            await tg("editMessageText", chat_id=chat_id, message_id=msg_id,
+                text=f"💱 <b>{from_cur} → {to_cur}</b>\n\nMiqdorni yozing (masalan: <code>100</code>):",
+                parse_mode="HTML")
+        elif action.startswith("conv_"):
+            conv_type = action[5:]
+            _calc_awaiting[uid] = {"type": "convert", "conv_type": conv_type}
+            labels = {"km_mi":"km ↔ mi","kg_lb":"kg ↔ lb","c_f":"°C ↔ °F","m_ft":"m ↔ ft"}
+            await tg("editMessageText", chat_id=chat_id, message_id=msg_id,
+                text=f"📏 <b>{labels.get(conv_type, conv_type)}</b>\n\nMiqdorni yozing:",
+                parse_mode="HTML")
+        elif action == "C":
+            _calc_expr[uid] = ""
+            mode = "basic"
+            await tg("editMessageText", chat_id=chat_id, message_id=msg_id,
+                text="🧮 <b>Kalkulator</b>\n\n<code>0</code>",
+                parse_mode="HTML", reply_markup=_calc_kb(mode))
+        elif action == "back":
+            expr = expr[:-1]
+            _calc_expr[uid] = expr
+            sci = any(f in expr for f in ["sin","cos","tan","log","ln","sqrt","π"])
+            mode = "science" if sci else "basic"
+            title = "🔬 <b>Ilmiy kalkulator</b>" if sci else "🧮 <b>Kalkulator</b>"
+            try:
+                await tg("editMessageText", chat_id=chat_id, message_id=msg_id,
+                    text=f"{title}\n\n<code>{expr or '0'}</code>",
+                    parse_mode="HTML", reply_markup=_calc_kb(mode))
+            except: pass
+        elif action == "=":
+            if expr:
+                try:
+                    result = safe_calc(expr)
+                    formatted = format_result(result)
+                    hist = _calc_history.get(uid, [])
+                    hist.append((expr, formatted))
+                    if len(hist) > 10: hist = hist[-10:]
+                    _calc_history[uid] = hist
+                    _calc_expr[uid] = str(result)
+                    await tg("editMessageText", chat_id=chat_id, message_id=msg_id,
+                        text=f"🧮 <b>Natija</b>\n\n<code>{expr}</code>\n━━━━━━━━━━━━━\n✅ <b>{formatted}</b>",
+                        parse_mode="HTML", reply_markup=_calc_result_kb())
+                except CalcError as e:
+                    await tg("answerCallbackQuery", callback_query_id=cq_id,
+                        text=f"❌ {str(e)}", show_alert=True)
+        else:
+            if action == "^2": expr += "^2"
+            elif action == "1/x": expr = f"1/({expr})" if expr else "1/"
+            else: expr += action
+            _calc_expr[uid] = expr
+            sci = any(f in expr for f in ["sin","cos","tan","log","ln","sqrt","π"])
+            mode = "science" if sci else "basic"
+            title = "🔬 <b>Ilmiy kalkulator</b>" if sci else "🧮 <b>Kalkulator</b>"
+            try:
+                await tg("editMessageText", chat_id=chat_id, message_id=msg_id,
+                    text=f"{title}\n\n<code>{expr or '0'}</code>",
+                    parse_mode="HTML", reply_markup=_calc_kb(mode))
+            except: pass
         return JSONResponse({"ok": True})
 
     # Admin panel tugmalari
@@ -676,6 +875,30 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
             "text": "🔗 Instagram, TikTok yoki YouTube havolasini yuboring."
+        })
+
+    # 🧮 Kalkulator
+    if text == "🧮 Kalkulator":
+        _calc_expr[user_id] = ""
+        return JSONResponse({
+            "method": "sendMessage", "chat_id": chat_id,
+            "text": "🧮 <b>CalcBot</b>\n\nQuyidagi tugmalardan birini tanlang:",
+            "parse_mode": "HTML", "reply_markup": _calc_menu_kb()
+        })
+
+    # 🤖 AI Suhbat
+    if text == "🤖 AI Suhbat":
+        db.set_state(user_id, "waiting_chat", "[]")
+        return JSONResponse({
+            "method": "sendMessage", "chat_id": chat_id,
+            "text": (
+                "🤖 <b>AI Suhbat</b>\n\n"
+                "Menga istalgan savol bering — javob beraman!\n"
+                "O'zbek, Rus yoki Ingliz tilida yozishingiz mumkin.\n\n"
+                "🔙 Chiqish uchun <b>Orqaga</b> tugmasini bosing."
+            ),
+            "parse_mode": "HTML",
+            "reply_markup": {"keyboard": [[{"text": "🔙 Orqaga"}]], "resize_keyboard": True}
         })
 
     # 🔍 Shazam
@@ -975,6 +1198,74 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
             "method": "sendMessage", "chat_id": chat_id,
             "text": "⏳ SMM AI ishlamoqda..."
         })
+
+    # 🤖 AI Suhbat state
+    if state == "waiting_chat" and text:
+        if text == "🔙 Orqaga":
+            db.set_state(user_id, None)
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                "text": "Asosiy menyu:", "reply_markup": MAIN_KB})
+        if not groq_client:
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                "text": "❌ AI sozlanmagan."})
+        try:
+            history = json.loads(state_data) if state_data else []
+        except: history = []
+        history.append({"role": "user", "content": text})
+        if len(history) > 20: history = history[-20:]
+        try:
+            resp = await asyncio.wait_for(
+                groq_client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[{"role": "system", "content": (
+                        "Sen Sadoon AI — aqlli va do'stona yordamchi. "
+                        "O'zbek, Rus va Ingliz tillarini bilasan. "
+                        "Foydalanuvchi qaysi tilda yozsa, o'sha tilda javob ber. "
+                        "Qisqa, aniq va foydali javob ber."
+                    )}] + history,
+                    max_tokens=1000, temperature=0.7,
+                ), timeout=30
+            )
+            reply = resp.choices[0].message.content
+            history.append({"role": "assistant", "content": reply})
+            db.set_state(user_id, "waiting_chat", json.dumps(history))
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                "text": reply[:4000],
+                "reply_markup": {"keyboard": [[{"text": "🔙 Orqaga"}]], "resize_keyboard": True}})
+        except asyncio.TimeoutError:
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                "text": "⏰ Javob kelmadi. Qaytadan urinib ko'ring."})
+        except Exception as e:
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                "text": f"❌ Xatolik: {str(e)[:200]}"})
+
+    # 🧮 Kalkulator callback (awaiting text input)
+    if _calc_awaiting.get(user_id) and text:
+        awaiting = _calc_awaiting.pop(user_id)
+        try:
+            amount = float(text.replace(",", "").replace(" ", ""))
+        except:
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                "text": "❌ Raqam kiriting (masalan: 100)"})
+        if awaiting["type"] == "currency":
+            try:
+                result = await _convert_currency(amount, awaiting["from"], awaiting["to"])
+                return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                    "text": (f"💱 <b>Valyuta konvertatsiyasi</b>\n\n"
+                             f"<code>{amount:,.2f} {awaiting['from']}</code>\n━━━━━━━━━━━━━\n"
+                             f"✅ <b>{result:,.2f} {awaiting['to']}</b>"),
+                    "parse_mode": "HTML", "reply_markup": _calc_result_kb()})
+            except Exception as e:
+                return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                    "text": f"❌ {e}", "reply_markup": _calc_currency_kb()})
+        elif awaiting["type"] == "convert":
+            try:
+                result = _convert_unit(amount, awaiting["conv_type"])
+                return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                    "text": result, "parse_mode": "HTML", "reply_markup": _calc_result_kb()})
+            except Exception as e:
+                return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                    "text": f"❌ {e}", "reply_markup": _calc_convert_kb()})
 
     # Admin state handlerlari
     if int(user_id) == ADMIN_ID and text:
