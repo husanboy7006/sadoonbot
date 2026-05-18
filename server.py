@@ -1140,9 +1140,19 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
             await tg_download(photo_id, p)
 
             if audio:
-                # To'g'ridan-to'g'ri audio fayl — asl formatda yuklaymiz
-                a = f"temp/a_{uuid.uuid4()}.aac"
-                await tg_download(audio["file_id"], a)
+                raw_a = f"temp/ar_{uuid.uuid4()}"
+                a = f"temp/a_{uuid.uuid4()}.m4a"
+                await tg_download(audio["file_id"], raw_a)
+                # M4A ga convert qilamiz
+                cmd_conv = [
+                    "ffmpeg", "-y", "-i", raw_a,
+                    "-vn", "-c:a", "aac", "-b:a", "128k",
+                    "-f", "mp4", "-movflags", "+faststart", a
+                ]
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd_conv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                await proc.communicate()
+                if os.path.exists(raw_a): os.remove(raw_a)
                 audio_ok = os.path.exists(a) and os.path.getsize(a) > 100
             elif text:
                 urls = re.findall(r'https?://[^\s]+', text)
@@ -1150,8 +1160,8 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
                     return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
                         "text": "❌ Havola topilmadi. Audio fayl yoki link yuboring."})
                 url = urls[0].strip('.,()!?')
-                a = f"temp/a_{uuid.uuid4()}.aac"
-                # bestaudio yuklab, AAC ga convert qilamiz
+                a = f"temp/a_{uuid.uuid4()}.m4a"
+                # bestaudio yuklab, m4a (MP4 container) ga convert qilamiz
                 audio_ok = await asyncio.wait_for(
                     mixer.download_audio_raw(url, a), timeout=55
                 )

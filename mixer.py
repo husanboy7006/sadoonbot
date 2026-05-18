@@ -296,9 +296,10 @@ async def download_audio_raw(url: str, output_path: str) -> bool:
         src = files[0]
         print(f"[*] Yuklab olindi: {src} ({os.path.getsize(src)} bytes), AAC ga convert qilinmoqda...")
 
-        # FFmpeg bilan to'g'ridan-to'g'ri AAC ga convert qilamiz
+        # FFmpeg bilan m4a (MP4 container) ga convert qilamiz — seeking uchun
         cmd = [ffmpeg_binary, "-y", "-i", src,
                "-vn", "-c:a", "aac", "-b:a", "128k", "-ar", "44100",
+               "-f", "mp4", "-movflags", "+faststart",
                output_path]
         proc = await asyncio.create_subprocess_exec(*cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         _, stderr = await proc.communicate()
