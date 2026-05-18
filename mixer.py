@@ -267,18 +267,41 @@ async def ensure_mp3(path: str) -> bool:
     print(f"[!] ensure_mp3 failed: {stderr.decode()[-200:]}")
     return False
 
-async def extract_audio_from_video(video_path: str, audio_path: str) -> bool:
-    """Video fayldan audio ajratib mp3 ga saqlash"""
-    print(f"[*] Audio ajratilmoqda: {video_path}")
-    cmd = [ffmpeg_binary, "-y", "-i", video_path, "-vn",
-           "-acodec", "libmp3lame", "-ab", "192k", "-ar", "44100", audio_path]
-    proc = await asyncio.create_subprocess_exec(*cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    _, stderr = await proc.communicate()
-    if proc.returncode == 0 and os.path.exists(audio_path) and os.path.getsize(audio_path) > 500:
-        print(f"[+] Audio ajratildi: {audio_path}")
+async def download_audio_raw(url: str, output_path: str) -> bool:
+    """URL dan bestaudio yuklab, asl formatda saqlash (postprocessor yo'q)"""
+    import glob
+    tmp_base = output_path + ".ytdlp"
+    try:
+        import yt_dlp
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': tmp_base + '.%(ext)s',
+            'ffmpeg_location': ffmpeg_binary,
+            'quiet': True,
+            'no_warnings': True,
+            'ignoreerrors': False,
+        }
+        def _run():
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(_executor, _run)
+        files = glob.glob(tmp_base + '.*')
+        if not files:
+            return False
+        src = files[0]
+        if os.path.getsize(src) < 500:
+            os.remove(src)
+            return False
+        os.rename(src, output_path)
+        print(f"[+] Audio raw yuklandi: {output_path}")
         return True
-    print(f"[!] extract_audio failed: {stderr.decode()[-300:]}")
-    return False
+    except Exception as e:
+        print(f"[!] download_audio_raw error: {e}")
+        for f in glob.glob(tmp_base + '.*'):
+            try: os.remove(f)
+            except: pass
+        return False
 
 async def compress_video(input_path: str, output_path: str):
     """Katta videoni 720p ga tushirib, 1 ta yadroda tezkor siqish"""

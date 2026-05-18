@@ -1150,17 +1150,13 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
                     return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
                         "text": "❌ Havola topilmadi. Audio fayl yoki link yuboring."})
                 url = urls[0].strip('.,()!?')
-                # Video yuklab, uni to'g'ridan-to'g'ri mix ga beramiz (audio ajratmaymiz)
-                downloaded = await asyncio.wait_for(
-                    mixer.download_video(url, tmp_v), timeout=55
+                # bestaudio formatda yuklaymiz (audio stream kafolatlanadi)
+                audio_ok = await asyncio.wait_for(
+                    mixer.download_audio_raw(url, a), timeout=55
                 )
-                if not downloaded or not os.path.exists(tmp_v) or os.path.getsize(tmp_v) < 1000:
-                    if os.path.exists(tmp_v): os.remove(tmp_v)
+                if not audio_ok:
                     return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
                         "text": "❌ Musiqa yuklab bo'lmadi. Boshqa havola yoki audio fayl yuboring."})
-                # Video faylni audio o'rnida ishlatamiz (FFmpeg audio stream ni o'zi oladi)
-                a = tmp_v
-                audio_ok = True
             else:
                 return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
                     "text": "❌ Audio fayl yoki havola yuboring."})
