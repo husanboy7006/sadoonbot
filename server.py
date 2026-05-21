@@ -358,16 +358,46 @@ async def bg_download(chat_id, user_id, url):
         success = await asyncio.wait_for(
             mixer.download_video(url, output), timeout=55
         )
-        if success:
-            file_url = f"{BASE_URL}/output/{filename}"
-            db.log_stats(user_id, "download")
-            await tg("sendVideo", chat_id=chat_id, video=file_url, supports_streaming=True,
-                     caption="🤖 <b>Sadoon AI</b> — video yuklab olish, tarjimon, SMM va boshqa xizmatlar!\n👉 @sadoon_ai_bot",
-                     parse_mode="HTML")
-            asyncio.create_task(_cleanup_file(output, 120))
+        if not success or not os.path.exists(output) or os.path.getsize(output) < 1000:
+            if os.path.exists(output): os.remove(output)
+            await tg_send(chat_id, "❌ Yuklab bo'lmadi. TikTok yoki YouTube havolasini sinab ko'ring.")
             return
-        if os.path.exists(output): os.remove(output)
-        await tg_send(chat_id, "❌ Yuklab bo'lmadi. TikTok yoki YouTube havolasini sinab ko'ring.")
+
+        file_size = os.path.getsize(output)
+        print(f"[+] Video yuklandi: {output} ({file_size // 1024} KB)")
+
+        # 50MB dan katta bo'lsa Telegram qabul qilmaydi
+        if file_size > 50 * 1024 * 1024:
+            if os.path.exists(output): os.remove(output)
+            await tg_send(chat_id, "❌ Video juda katta (50MB dan oshiq). Qisqaroq video sinab ko'ring.")
+            return
+
+        file_url = f"{BASE_URL}/output/{filename}"
+        db.log_stats(user_id, "download")
+
+        # Telegram ga yuborish — URL orqali
+        resp = await tg("sendVideo", chat_id=chat_id, video=file_url, supports_streaming=True,
+                 caption="🤖 <b>Sadoon AI</b> — video yuklab olish, tarjimon, SMM va boshqa xizmatlar!\n👉 @sadoon_ai_bot",
+                 parse_mode="HTML")
+
+        if not resp.get("ok"):
+            print(f"[!] sendVideo failed: {resp}")
+            # URL orqali bo'lmasa, fayl sifatida yuboramiz
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=120)) as s:
+                with open(output, "rb") as f:
+                    form = aiohttp.FormData()
+                    form.add_field("chat_id", str(chat_id))
+                    form.add_field("supports_streaming", "true")
+                    form.add_field("caption", "🤖 <b>Sadoon AI</b> — video yuklab olish, tarjimon, SMM va boshqa xizmatlar!\n👉 @sadoon_ai_bot")
+                    form.add_field("parse_mode", "HTML")
+                    form.add_field("video", f, filename=filename, content_type="video/mp4")
+                    async with s.post(f"{TG_API}/sendVideo", data=form) as r:
+                        resp2 = await r.json()
+                        if not resp2.get("ok"):
+                            print(f"[!] sendVideo (file) failed: {resp2}")
+                            await tg_send(chat_id, f"❌ Video yuborishda xatolik: {resp2.get('description', '')}")
+
+        asyncio.create_task(_cleanup_file(output, 120))
     except (asyncio.TimeoutError, asyncio.CancelledError):
         if os.path.exists(output): os.remove(output)
         await tg_send(chat_id, "⏰ 55 soniya ichida yuklanmadi. Video juda katta yoki sayt bloklangan.")
