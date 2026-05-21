@@ -158,19 +158,32 @@ async def yt_dlp_download(url, output_path, is_audio=False):
     print(f"[*] yt-dlp: {url[:30]} (Audio={is_audio})")
     try:
         import yt_dlp
+        is_youtube = "youtube.com" in url or "youtu.be" in url
+
         ydl_opts = {
-            'format': 'bestaudio/best' if is_audio else 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
+            'format': 'bestaudio/best' if is_audio else 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[filesize<?50M]/best',
             'outtmpl': output_path.replace('.mp3', '') if is_audio else output_path,
             'ffmpeg_location': ffmpeg_binary,
-            'quiet': True,
-            'no_warnings': True,
-            'ignoreerrors': True,
-            'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
-            'extractor_args': {'youtube': {'player_clients': ['web', 'android']}}
+            'quiet': False,
+            'no_warnings': False,
+            'ignoreerrors': False,
+            'socket_timeout': 30,
         }
 
+        if is_youtube:
+            ydl_opts['extractor_args'] = {
+                'youtube': {'player_clients': ['ios', 'web_creator', 'android']}
+            }
+            ydl_opts['http_headers'] = {
+                'User-Agent': 'com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip'
+            }
+        else:
+            ydl_opts['http_headers'] = {
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15'
+            }
+
         if os.path.exists("cookies.txt"):
-            print("[+] Using cookies.txt for authentication")
+            print("[+] Using cookies.txt")
             ydl_opts['cookiefile'] = "cookies.txt"
 
         if is_audio:
@@ -189,7 +202,7 @@ async def yt_dlp_download(url, output_path, is_audio=False):
                 os.rename(output_path + ".mp3", output_path)
                 return True
             return os.path.exists(output_path)
-        return os.path.exists(output_path)
+        return os.path.exists(output_path) and os.path.getsize(output_path) > 1000
     except Exception as e:
         print(f"[!] yt-dlp error: {e}")
         return False
