@@ -366,11 +366,21 @@ async def bg_download(chat_id, user_id, url):
         file_size = os.path.getsize(output)
         print(f"[+] Video yuklandi: {output} ({file_size // 1024} KB)")
 
-        # 50MB dan katta bo'lsa Telegram qabul qilmaydi
+        # 50MB dan katta bo'lsa siqamiz
         if file_size > 50 * 1024 * 1024:
+            await tg_send(chat_id, "📦 Video katta, siqilmoqda...")
+            compressed = output.replace(".mp4", "_c.mp4")
+            ok = await mixer.compress_video(output, compressed)
             if os.path.exists(output): os.remove(output)
-            await tg_send(chat_id, "❌ Video juda katta (50MB dan oshiq). Qisqaroq video sinab ko'ring.")
-            return
+            if ok and os.path.exists(compressed):
+                output = compressed
+                filename = os.path.basename(compressed)
+                file_size = os.path.getsize(compressed)
+                print(f"[+] Siqildi: {compressed} ({file_size // 1024} KB)")
+            else:
+                if os.path.exists(compressed): os.remove(compressed)
+                await tg_send(chat_id, "❌ Video juda katta va siqib bo'lmadi. Qisqaroq video sinab ko'ring.")
+                return
 
         file_url = f"{BASE_URL}/output/{filename}"
         db.log_stats(user_id, "download")
