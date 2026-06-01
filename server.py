@@ -336,17 +336,27 @@ async def _cleanup_file(path, delay=60):
     except: pass
 
 async def bg_shazam_url(chat_id, user_id, url, audio_path):
+    tmp_v = audio_path + ".tmp.mp4"
     try:
-        actual = await asyncio.wait_for(
-            mixer.download_audio_raw(url, audio_path), timeout=50
+        # 1. Avval video yuklab, audio ajratamiz
+        downloaded = await asyncio.wait_for(
+            mixer.download_video(url, tmp_v), timeout=50
         )
-        if not actual or not os.path.exists(actual):
-            await tg_send(chat_id, "❌ Audio yuklab bo'lmadi.")
-            return
-        await bg_shazam(chat_id, actual)
+        if downloaded and os.path.exists(tmp_v) and os.path.getsize(tmp_v) > 1000:
+            ok = await mixer.extract_audio_from_video(tmp_v, audio_path)
+            if os.path.exists(tmp_v): os.remove(tmp_v)
+            if ok:
+                await bg_shazam(chat_id, audio_path)
+                return
+        if os.path.exists(tmp_v): os.remove(tmp_v)
+        await tg_send(chat_id, "❌ Audio yuklab bo'lmadi. Audio fayl yoki boshqa havola yuboring.")
     except asyncio.TimeoutError:
+        for f in [tmp_v, audio_path]:
+            if os.path.exists(f): os.remove(f)
         await tg_send(chat_id, "⏰ Yuklab bo'lmadi. Boshqa havola sinab ko'ring.")
     except Exception as e:
+        for f in [tmp_v, audio_path]:
+            if os.path.exists(f): os.remove(f)
         await tg_send(chat_id, f"❌ Xatolik: {str(e)[:200]}")
 
 async def bg_shazam(chat_id, audio_path):
