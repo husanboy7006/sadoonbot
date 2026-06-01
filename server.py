@@ -338,14 +338,16 @@ async def _cleanup_file(path, delay=60):
 async def bg_shazam_url(chat_id, user_id, url, audio_path):
     tmp_v = audio_path + ".tmp.mp4"
     try:
-        # 1. Avval video yuklab, audio ajratamiz
+        print(f"[Shazam] URL yuklanmoqda: {url[:50]}")
         downloaded = await asyncio.wait_for(
             mixer.download_video(url, tmp_v), timeout=50
         )
+        print(f"[Shazam] download_video={downloaded}, exists={os.path.exists(tmp_v)}, size={os.path.getsize(tmp_v) if os.path.exists(tmp_v) else 0}")
         if downloaded and os.path.exists(tmp_v) and os.path.getsize(tmp_v) > 1000:
             ok = await mixer.extract_audio_from_video(tmp_v, audio_path)
+            print(f"[Shazam] extract_audio={ok}, audio_exists={os.path.exists(audio_path)}, audio_size={os.path.getsize(audio_path) if os.path.exists(audio_path) else 0}")
             if os.path.exists(tmp_v): os.remove(tmp_v)
-            if ok:
+            if ok and os.path.exists(audio_path):
                 await bg_shazam(chat_id, audio_path)
                 return
         if os.path.exists(tmp_v): os.remove(tmp_v)
@@ -355,6 +357,7 @@ async def bg_shazam_url(chat_id, user_id, url, audio_path):
             if os.path.exists(f): os.remove(f)
         await tg_send(chat_id, "⏰ Yuklab bo'lmadi. Boshqa havola sinab ko'ring.")
     except Exception as e:
+        print(f"[Shazam] Exception: {e}")
         for f in [tmp_v, audio_path]:
             if os.path.exists(f): os.remove(f)
         await tg_send(chat_id, f"❌ Xatolik: {str(e)[:200]}")
