@@ -333,6 +333,20 @@ async def identify_music(audio_path: str) -> dict | None:
         print(f"[!] Shazam error: {e}")
         return None
 
+async def extract_audio_from_video(video_path: str, audio_path: str) -> bool:
+    """Video fayldan audio ajratib mp3 ga saqlash"""
+    print(f"[*] Audio ajratilmoqda: {video_path}")
+    cmd = [ffmpeg_binary, "-y", "-i", video_path,
+           "-vn", "-acodec", "libmp3lame", "-ab", "192k", "-ar", "44100",
+           audio_path]
+    proc = await asyncio.create_subprocess_exec(*cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    _, stderr = await proc.communicate()
+    if proc.returncode == 0 and os.path.exists(audio_path) and os.path.getsize(audio_path) > 500:
+        print(f"[+] Audio ajratildi: {audio_path}")
+        return True
+    print(f"[!] extract_audio failed: {stderr.decode()[-200:]}")
+    return False
+
 async def compress_video(input_path: str, output_path: str):
     """Katta videoni 720p ga tushirib, 1 ta yadroda tezkor siqish"""
     print(f"[*] Compressing video (optimized): {input_path}")
