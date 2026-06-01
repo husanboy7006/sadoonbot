@@ -312,6 +312,27 @@ async def ensure_mp3(path: str) -> bool:
     print(f"[!] ensure_mp3 failed: {stderr.decode()[-200:]}")
     return False
 
+async def identify_music(audio_path: str) -> dict | None:
+    """Audio fayldan qo'shiq nomini aniqlash (Shazam orqali)"""
+    print(f"[*] Shazam: {audio_path}")
+    try:
+        from shazamio import Shazam
+        shazam = Shazam()
+        result = await shazam.recognize(audio_path)
+        track = result.get("track")
+        if not track:
+            return None
+        return {
+            "title": track.get("title", "Noma'lum"),
+            "artist": track.get("subtitle", "Noma'lum"),
+            "album": (track.get("sections", [{}])[0].get("metadata", [{}])[0].get("text", "") if track.get("sections") else ""),
+            "cover": track.get("images", {}).get("coverart", ""),
+            "url": track.get("url", ""),
+        }
+    except Exception as e:
+        print(f"[!] Shazam error: {e}")
+        return None
+
 async def compress_video(input_path: str, output_path: str):
     """Katta videoni 720p ga tushirib, 1 ta yadroda tezkor siqish"""
     print(f"[*] Compressing video (optimized): {input_path}")

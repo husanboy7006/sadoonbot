@@ -335,8 +335,42 @@ async def _cleanup_file(path, delay=60):
         if os.path.exists(path): os.remove(path)
     except: pass
 
-async def bg_shazam(chat_id):
-    await tg_send(chat_id, "❌ Shazam vaqtincha ishlamaydi.")
+async def bg_shazam_url(chat_id, user_id, url, audio_path):
+    try:
+        actual = await asyncio.wait_for(
+            mixer.download_audio_raw(url, audio_path), timeout=50
+        )
+        if not actual or not os.path.exists(actual):
+            await tg_send(chat_id, "❌ Audio yuklab bo'lmadi.")
+            return
+        await bg_shazam(chat_id, actual)
+    except asyncio.TimeoutError:
+        await tg_send(chat_id, "⏰ Yuklab bo'lmadi. Boshqa havola sinab ko'ring.")
+    except Exception as e:
+        await tg_send(chat_id, f"❌ Xatolik: {str(e)[:200]}")
+
+async def bg_shazam(chat_id, audio_path):
+    try:
+        result = await asyncio.wait_for(mixer.identify_music(audio_path), timeout=30)
+        if result:
+            text = (
+                f"🎵 <b>{result['title']}</b>\n"
+                f"🎤 {result['artist']}\n"
+            )
+            if result.get("album"):
+                text += f"💿 {result['album']}\n"
+            if result.get("url"):
+                text += f"\n🔗 <a href='{result['url']}'>Shazam da ochish</a>"
+            await tg("sendMessage", chat_id=chat_id, text=text,
+                     parse_mode="HTML", disable_web_page_preview=False)
+        else:
+            await tg_send(chat_id, "❌ Qo'shiq aniqlanmadi. Boshqa audio sinab ko'ring.")
+    except asyncio.TimeoutError:
+        await tg_send(chat_id, "⏰ Vaqt tugadi. Qaytadan urinib ko'ring.")
+    except Exception as e:
+        await tg_send(chat_id, f"❌ Xatolik: {str(e)[:200]}")
+    finally:
+        if os.path.exists(audio_path): os.remove(audio_path)
 
 async def bg_mix_clip(chat_id, user_id, p, a, v):
     try:
@@ -957,10 +991,17 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
 
     # 🔍 Shazam
     if text == "🔍 Shazam":
+        db.set_state(user_id, "waiting_shazam")
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
-            "text": "❌ Shazam vaqtincha ishlamaydi. Tez orada yoqiladi!",
-            "reply_markup": FREE_KB
+            "text": (
+                "🔍 <b>Shazam</b>\n\n"
+                "Qo'shiqni aniqlash uchun:\n"
+                "🎵 Audio fayl yuboring\n"
+                "🎬 Video fayl yuboring\n"
+                "🔗 Yoki YouTube/TikTok/Instagram havolasi yuboring"
+            ),
+            "parse_mode": "HTML"
         })
 
     # 🎬 Klip Yaratish
@@ -1059,6 +1100,29 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
             "method": "sendMessage", "chat_id": chat_id,
             "text": "❌ Havola topilmadi. Iltimos, to'g'ri URL yuboring."
         })
+
+    if state == "waiting_shazam":
+        db.set_state(user_id, None)
+        a = f"temp/shazam_{uuid.uuid4()}.mp3"
+        if audio:
+            await tg_download(audio["file_id"], a)
+            background_tasks.add_task(bg_shazam, chat_id, a)
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                "text": "🔍 Qo'shiq aniqlanmoqda..."})
+        elif msg.get("video") or msg.get("video_note"):
+            file_id = (msg.get("video") or msg.get("video_note"))["file_id"]
+            await tg_download(file_id, a)
+            background_tasks.add_task(bg_shazam, chat_id, a)
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                "text": "🔍 Qo'shiq aniqlanmoqda..."})
+        elif text:
+            urls = re.findall(r'https?://[^\s]+', text)
+            if urls:
+                background_tasks.add_task(bg_shazam_url, chat_id, user_id, urls[0].strip('.,()!?'), a)
+                return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                    "text": "⏳ Audio yuklanmoqda, qo'shiq aniqlanmoqda..."})
+        return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+            "text": "❌ Audio fayl, video yoki havola yuboring."})
 
     if state == "waiting_translate" and text:
         db.set_state(user_id, None)
