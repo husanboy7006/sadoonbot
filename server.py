@@ -351,7 +351,11 @@ async def bg_shazam_url(chat_id, user_id, url, audio_path):
                 await bg_shazam(chat_id, audio_path)
                 return
         if os.path.exists(tmp_v): os.remove(tmp_v)
-        await tg_send(chat_id, "❌ Audio yuklab bo'lmadi. Audio fayl yoki boshqa havola yuboring.")
+        await tg_send(chat_id,
+            "❌ Bu havoladan audio yuklab bo'lmadi.\n\n"
+            "💡 Instagram <b>foto post</b> (/p/...) ishlamaydi.\n"
+            "✅ Instagram <b>Reels</b> (/reel/...) yoki YouTube linkini yuboring.\n"
+            "Yoki audio/video faylni to'g'ridan-to'g'ri yuboring.", )
     except asyncio.TimeoutError:
         for f in [tmp_v, audio_path]:
             if os.path.exists(f): os.remove(f)
@@ -1008,11 +1012,15 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
             "text": (
-                "🔍 <b>Shazam</b>\n\n"
-                "Qo'shiqni aniqlash uchun:\n"
-                "🎵 Audio fayl yuboring\n"
-                "🎬 Video fayl yuboring\n"
-                "🔗 Yoki YouTube/TikTok/Instagram havolasi yuboring"
+                "🔍 <b>Shazam — Qo'shiq aniqlash</b>\n\n"
+                "Quyidagilardan birini yuboring:\n\n"
+                "🎵 <b>Audio fayl</b> — mp3, m4a, ogg\n"
+                "🎬 <b>Video fayl</b> — mp4, mov\n"
+                "🔗 <b>Havola:</b>\n"
+                "   ✅ YouTube (video/shorts)\n"
+                "   ✅ TikTok\n"
+                "   ✅ Instagram <b>Reels</b> (/reel/...)\n"
+                "   ❌ Instagram <b>foto post</b> (/p/...) — ishlamaydi"
             ),
             "parse_mode": "HTML"
         })
