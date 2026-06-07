@@ -27,11 +27,34 @@ ADMIN_ID = os.getenv("ADMIN_ID")
 if not ADMIN_ID:
     print("❌ ADMIN_ID environment variable not set!")
     exit(1)
-ADMIN_ID = int(ADMIN_ID)
+try:
+    ADMIN_ID = int(ADMIN_ID)
+except ValueError:
+    print("❌ ADMIN_ID environment variable must be an integer!")
+    exit(1)
 
 if not TOKEN:
     print("❌ ERROR: Telegram BOT_TOKEN topilmadi!")
     exit(1)
+
+
+def parse_int_env(name, default):
+    value = os.getenv(name, str(default))
+    try:
+        return int(value)
+    except ValueError:
+        print(f"❌ {name} invalid integer: {value}. Using default {default}.")
+        return default
+
+
+def parse_float_env(name, default):
+    value = os.getenv(name, str(default))
+    try:
+        return float(value)
+    except ValueError:
+        print(f"❌ {name} invalid float: {value}. Using default {default}.")
+        return default
+
 
 gemini_client = None
 if GEMINI_KEY:
@@ -159,10 +182,10 @@ def convert_unit(amount, conv_type):
             f"<code>{amount:,.2f} {u1}</code> = <b>{fwd(amount):,.4f} {u2}</b>\n"
             f"<code>{amount:,.2f} {u2}</code> = <b>{bwd(amount):,.4f} {u1}</b>")
 
-SMM_FREE_DAILY = int(os.getenv("FREE_DAILY_LIMIT", "3"))
-SMM_PREMIUM_DAILY = int(os.getenv("PREMIUM_DAILY_LIMIT", "30"))
-SMM_MAX_TOKENS = int(os.getenv("MAX_TOKENS", "5000"))
-SMM_TEMPERATURE = float(os.getenv("TEMPERATURE", "0.8"))
+SMM_FREE_DAILY = parse_int_env("FREE_DAILY_LIMIT", 3)
+SMM_PREMIUM_DAILY = parse_int_env("PREMIUM_DAILY_LIMIT", 30)
+SMM_MAX_TOKENS = parse_int_env("MAX_TOKENS", 5000)
+SMM_TEMPERATURE = parse_float_env("TEMPERATURE", 0.8)
 PAYMENT_ADMIN = os.getenv("PAYMENT_ADMIN", "@husanjon007")
 
 main_keyboard = types.ReplyKeyboardMarkup(

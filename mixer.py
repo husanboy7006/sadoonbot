@@ -38,7 +38,8 @@ async def download_audio(url: str, output_path: str):
                 AudioSegment.from_file(output_path + ".temp.mp4").export(output_path, format="mp3", bitrate="192k")
                 if os.path.exists(output_path + ".temp.mp4"): os.remove(output_path + ".temp.mp4")
                 return True
-            except: pass
+            except Exception as e:
+                print(f"[!] AudioSegment conversion error: {e}")
 
     # 2. Cobalt API Fallbacks
     cobalt_mirrors = [
@@ -137,7 +138,8 @@ async def search_and_download_music(query: str, output_path: str):
                     if data.get('status') and data.get('data'):
                         v_url = data['data'][0]['url']
                         if await download_audio(v_url, output_path): return True
-    except: pass
+    except Exception as e:
+        print(f"[!] Vreden search error: {e}")
 
     # Invidious Search
     instances = ["https://yewtu.be", "https://invidious.projectsegfau.lt", "https://iv.ggtyler.dev"]
@@ -150,7 +152,8 @@ async def search_and_download_music(query: str, output_path: str):
                         if data and len(data) > 0:
                             v_url = f"https://www.youtube.com/watch?v={data[0]['videoId']}"
                             if await download_audio(v_url, output_path): return True
-        except: pass
+        except Exception as e:
+            print(f"[!] Invidious search error ({inst}): {e}")
 
     return await yt_dlp_download(f"ytsearch1:{query}", output_path, is_audio=True)
 
@@ -260,8 +263,10 @@ async def download_audio_raw(url: str, out_base: str) -> str | None:
         files = glob.glob(tmp_base + '.*')
         if not files or os.path.getsize(files[0]) < 500:
             for f in files:
-                try: os.remove(f)
-                except: pass
+                try:
+                    os.remove(f)
+                except Exception as e:
+                    print(f"[!] cleanup error: {e}")
             return None
         src = files[0]
         ext = os.path.splitext(src)[1]   # .m4a, .webm, .opus ...
@@ -272,8 +277,10 @@ async def download_audio_raw(url: str, out_base: str) -> str | None:
     except Exception as e:
         print(f"[!] download_audio_raw error: {e}")
         for f in glob.glob(tmp_base + '.*'):
-            try: os.remove(f)
-            except: pass
+            try:
+                os.remove(f)
+            except Exception as cleanup_err:
+                print(f"[!] cleanup error: {cleanup_err}")
         return None
 
 async def mix_image_audio(image_path: str, audio_path: str, output_path: str):

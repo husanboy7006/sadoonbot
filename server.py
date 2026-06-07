@@ -67,8 +67,35 @@ ADMIN_ID = os.getenv("ADMIN_ID")
 if not ADMIN_ID:
     print("❌ ADMIN_ID environment variable not set!")
     exit(1)
-ADMIN_ID = int(ADMIN_ID)
+try:
+    ADMIN_ID = int(ADMIN_ID)
+except ValueError:
+    print("❌ ADMIN_ID environment variable must be an integer!")
+    exit(1)
+if not BOT_TOKEN:
+    print("❌ BOT_TOKEN / HF_TOKEN / API_TOKEN environment variable not set!")
+    exit(1)
 TG_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
+
+
+def parse_int_env(name, default):
+    value = os.getenv(name, str(default))
+    try:
+        return int(value)
+    except ValueError:
+        print(f"❌ {name} invalid integer: {value}. Using default {default}.")
+        return default
+
+
+def parse_float_env(name, default):
+    value = os.getenv(name, str(default))
+    try:
+        return float(value)
+    except ValueError:
+        print(f"❌ {name} invalid float: {value}. Using default {default}.")
+        return default
+
+
 db = Database()
 
 # --- 5. GEMINI ---
@@ -112,10 +139,10 @@ SMM_PROMPTS = {
     "smm_strategy": smm_strategy.SYSTEM_PROMPT,
 }
 
-SMM_FREE_DAILY = int(os.getenv("FREE_DAILY_LIMIT", "3"))
-SMM_PREMIUM_DAILY = int(os.getenv("PREMIUM_DAILY_LIMIT", "30"))
-SMM_MAX_TOKENS = int(os.getenv("MAX_TOKENS", "5000"))
-SMM_TEMPERATURE = float(os.getenv("TEMPERATURE", "0.8"))
+SMM_FREE_DAILY = parse_int_env("FREE_DAILY_LIMIT", 3)
+SMM_PREMIUM_DAILY = parse_int_env("PREMIUM_DAILY_LIMIT", 30)
+SMM_MAX_TOKENS = parse_int_env("MAX_TOKENS", 5000)
+SMM_TEMPERATURE = parse_float_env("TEMPERATURE", 0.8)
 PAYMENT_ADMIN = os.getenv("PAYMENT_ADMIN", "@husanjon007")
 
 TILMOCH_SYSTEM = """Sen "Tilmoch AI" — O'zbek, Rus va Xitoy tillari o'rtasida tezkor va aniq tarjimon.
@@ -1270,7 +1297,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
                 await tg_download(audio["file_id"], raw_a)
                 # M4A ga convert qilamiz
                 cmd_conv = [
-                    "ffmpeg", "-y", "-i", raw_a,
+                    mixer.ffmpeg_binary, "-y", "-i", raw_a,
                     "-vn", "-c:a", "aac", "-b:a", "128k",
                     "-f", "mp4", "-movflags", "+faststart", a
                 ]
@@ -1279,6 +1306,10 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
                 await proc.communicate()
                 if os.path.exists(raw_a): os.remove(raw_a)
                 audio_ok = os.path.exists(a) and os.path.getsize(a) > 100
+                if not audio_ok:
+                    if os.path.exists(a): os.remove(a)
+                    return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                        "text": "❌ Audio konvertatsiya bo‘lmadi. Iltimos, boshqa audio fayl yoki link yuboring."})
             elif text:
                 urls = re.findall(r'https?://[^\s]+', text)
                 if not urls:
@@ -1580,5 +1611,5 @@ async def _register_webhook():
     print("[!] Webhook ro'yxatdan o'tmadi!")
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 7860))
+    port = parse_int_env("PORT", 7860)
     uvicorn.run(app, host="0.0.0.0", port=port)

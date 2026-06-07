@@ -105,7 +105,8 @@ class Database:
                 "service_type": service_type,
                 "timestamp": now
             }).execute()
-        except: pass
+        except Exception as e:
+            print(f"[DB] log_stats error: {e}")
 
     def is_premium(self, user_id):
         try:
@@ -169,7 +170,8 @@ class Database:
         try:
             res = self.supabase.table("users").select("user_id").eq("user_id", str(user_id)).execute()
             return bool(res.data)
-        except:
+        except Exception as e:
+            print(f"[DB] user_exists error: {e}")
             return False
 
     def get_premium_users(self):
@@ -227,14 +229,16 @@ class Database:
             try:
                 users_res = self.supabase.table("users").select("user_id", count="exact").execute()
                 total_users = users_res.count if users_res.count is not None else 0
-            except: pass
+            except Exception as e:
+                print(f"[DB] get_stats_report users count error: {e}")
             
             # 2. Bugungi yangi odamlar
             new_users_today = 0
             try:
                 new_res = self.supabase.table("users").select("user_id", count="exact").filter("join_date", "gte", f"{today} 00:00:00").execute()
                 new_users_today = new_res.count if new_res.count is not None else 0
-            except: pass
+            except Exception as e:
+                print(f"[DB] get_stats_report new users error: {e}")
             
             # 3. Bugungi stats (faqat bugun)
             today_bd = {"mix": 0, "shazam": 0, "download": 0, "translate": 0,
@@ -249,7 +253,8 @@ class Database:
                     stype = item.get("service_type", "download")
                     if stype in today_bd:
                         today_bd[stype] += 1
-            except: pass
+            except Exception as e:
+                print(f"[DB] get_stats_report today stats error: {e}")
 
             # 4. Umumiy stats (faqat so'nggi 10000 ta yozuv)
             total_bd = {"mix": 0, "shazam": 0, "download": 0, "translate": 0,
@@ -262,7 +267,8 @@ class Database:
                     stype = item.get("service_type", "download")
                     if stype in total_bd:
                         total_bd[stype] += 1
-            except: pass
+            except Exception as e:
+                print(f"[DB] get_stats_report total stats error: {e}")
                 
             report = f"📊 <b>Sadoon AI Admin Paneli</b>\n"
             report += f"━━━━━━━━━━━━━━━\n\n"
