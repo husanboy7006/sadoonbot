@@ -183,7 +183,8 @@ MAIN_KB = {
     "keyboard": [
         [{"text": "🆓 Bepul xizmatlar"}],
         [{"text": "💎 Pullik xizmatlar"}],
-        [{"text": "✍️ Takliflar"}]
+        [{"text": "✍️ Takliflar"}],
+        [{"text": "📤 Do'stga ulashish"}]
     ],
     "resize_keyboard": True
 }
@@ -991,6 +992,33 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
             "method": "sendMessage", "chat_id": chat_id,
             "text": f"💎 <b>Pullik xizmatlar</b>\n\n{info}\n\nBitta tanlang:",
             "parse_mode": "HTML", "reply_markup": PAID_KB
+        })
+
+    # 📤 Do'stga ulashish
+    if text == "📤 Do'stga ulashish":
+        import urllib.parse
+        share_msg = (
+            "🤖 Sadoon AI botini sinab ko'ring!\n\n"
+            "🎬 TikTok, Instagram, YouTube — video yuklab olish\n"
+            "🔍 Shazam — qo'shiq aniqlash\n"
+            "🌐 AI tarjimon — O'zbek ↔ Rus ↔ Xitoy\n"
+            "🤖 AI suhbat va maslahat\n"
+            "🧮 Kalkulator + valyuta konvertori\n\n"
+            "👉 @sadoon_ai_bot — bepul!"
+        )
+        share_url = (
+            "https://t.me/share/url?url="
+            + urllib.parse.quote("https://t.me/sadoon_ai_bot")
+            + "&text="
+            + urllib.parse.quote(share_msg)
+        )
+        return JSONResponse({
+            "method": "sendMessage", "chat_id": chat_id,
+            "text": "📤 <b>Do'stga ulashish</b>\n\nQuyidagi tugmani bosib, do'stingizga yuboring:",
+            "parse_mode": "HTML",
+            "reply_markup": {"inline_keyboard": [[
+                {"text": "📤 Telegram'da ulashish", "url": share_url}
+            ]]}
         })
 
     # 🔙 Orqaga

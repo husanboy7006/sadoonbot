@@ -192,7 +192,8 @@ main_keyboard = types.ReplyKeyboardMarkup(
     keyboard=[
         [types.KeyboardButton(text="🆓 Bepul xizmatlar")],
         [types.KeyboardButton(text="💎 Pullik xizmatlar")],
-        [types.KeyboardButton(text="✍️ Takliflar")]
+        [types.KeyboardButton(text="✍️ Takliflar")],
+        [types.KeyboardButton(text="📤 Do'stga ulashish")]
     ],
     resize_keyboard=True
 )
@@ -719,6 +720,32 @@ async def handle_clip_audio(message: Message, state: FSMContext):
         for f in [p_path, a_path, v_path]:
             if os.path.exists(f): os.remove(f)
         await state.clear()
+
+@dp.message(F.text == "📤 Do'stga ulashish")
+async def share_bot(message: Message):
+    import urllib.parse
+    share_msg = (
+        "🤖 Sadoon AI botini sinab ko'ring!\n\n"
+        "🎬 TikTok, Instagram, YouTube — video yuklab olish\n"
+        "🔍 Shazam — qo'shiq aniqlash\n"
+        "🌐 AI tarjimon — O'zbek ↔ Rus ↔ Xitoy\n"
+        "🤖 AI suhbat va maslahat\n"
+        "🧮 Kalkulator + valyuta konvertori\n\n"
+        "👉 @sadoon_ai_bot — bepul!"
+    )
+    share_url = (
+        "https://t.me/share/url?url="
+        + urllib.parse.quote("https://t.me/sadoon_ai_bot")
+        + "&text="
+        + urllib.parse.quote(share_msg)
+    )
+    await message.answer(
+        "📤 <b>Do'stga ulashish</b>\n\nQuyidagi tugmani bosib, do'stingizga yuboring:",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="📤 Telegram'da ulashish", url=share_url)
+        ]])
+    )
 
 @dp.message(F.text == "✍️ Takliflar")
 async def feedback_start(message: Message, state: FSMContext):
