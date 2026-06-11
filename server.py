@@ -319,6 +319,10 @@ def _convert_unit(amount, conv_type):
 # --- 7. TELEGRAM HELPERS ---
 _TG_TIMEOUT = aiohttp.ClientTimeout(total=60, connect=15)
 
+def _ipv4_connector():
+    """IPv6 marshrut muammosi tufayli 'Connection timeout' bo'lmasligi uchun faqat IPv4."""
+    return aiohttp.TCPConnector(family=socket.AF_INET)
+
 def fmt_date(date_str):
     try:
         from datetime import datetime
@@ -329,7 +333,7 @@ def fmt_date(date_str):
 async def tg(method, **kwargs):
     for attempt in range(3):
         try:
-            async with aiohttp.ClientSession(timeout=_TG_TIMEOUT) as s:
+            async with aiohttp.ClientSession(timeout=_TG_TIMEOUT, connector=_ipv4_connector()) as s:
                 async with s.post(f"{TG_API}/{method}", json=kwargs) as r:
                     return await r.json()
         except Exception as e:
@@ -343,7 +347,7 @@ async def tg_send(chat_id, text, **kwargs):
 
 async def tg_download(file_id, save_path):
     try:
-        async with aiohttp.ClientSession(timeout=_TG_TIMEOUT) as s:
+        async with aiohttp.ClientSession(timeout=_TG_TIMEOUT, connector=_ipv4_connector()) as s:
             async with s.get(f"{TG_API}/getFile?file_id={file_id}") as r:
                 info = await r.json()
             fp = (info.get("result") or {}).get("file_path")
@@ -472,7 +476,7 @@ async def bg_download(chat_id, user_id, url):
         if not resp.get("ok"):
             print(f"[!] sendVideo failed: {resp}")
             # URL orqali bo'lmasa, fayl sifatida yuboramiz
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=120)) as s:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=120), connector=_ipv4_connector()) as s:
                 with open(output, "rb") as f:
                     form = aiohttp.FormData()
                     form.add_field("chat_id", str(chat_id))
@@ -1627,7 +1631,7 @@ async def _register_webhook():
     webhook_url = f"{BASE_URL}/webhook/bot"
     for attempt in range(5):
         try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as s:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30), connector=_ipv4_connector()) as s:
                 async with s.post(f"{TG_API}/setWebhook", json={"url": webhook_url, "drop_pending_updates": True}) as r:
                     result = await r.json()
                     print(f"[*] Webhook: {webhook_url} -> {result.get('description', result)}")
