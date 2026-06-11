@@ -326,15 +326,11 @@ def _convert_unit(amount, conv_type):
 _TG_TIMEOUT = aiohttp.ClientTimeout(total=60, connect=15)
 
 def _ipv4_connector():
-    """Konteyner ichidagi standart DNS sekin/ishlamay qolishi va IPv6 marshrut
-    muammosi tufayli 'Connection timeout' bo'lmasligi uchun: faqat IPv4 +
-    Cloudflare/Google DNS orqali nom hal qilish."""
-    try:
-        resolver = aiohttp.resolver.AsyncResolver(nameservers=["1.1.1.1", "1.0.0.1", "8.8.8.8"])
-    except Exception as e:
-        print(f"[!] AsyncResolver mavjud emas ({e}), oddiy IPv4 connector ishlatiladi")
-        return aiohttp.TCPConnector(family=socket.AF_INET)
-    return aiohttp.TCPConnector(family=socket.AF_INET, resolver=resolver)
+    """Konteynerda aiodns/c-ares orqali DNS-over-UDP (1.1.1.1/8.8.8.8) bloklangan
+    bo'lishi mumkin va shu sabab 'Connection timeout'ga olib keladi. Shuning uchun
+    standart resolver (socket.getaddrinfo, apply_dns_patch bilan IPv4'ga
+    filtrlangan) + faqat IPv4 socketlar ishlatiladi."""
+    return aiohttp.TCPConnector(family=socket.AF_INET)
 
 def fmt_date(date_str):
     try:
@@ -775,38 +771,45 @@ async def handle_callback_query(query: dict):
         return JSONResponse({"ok": True})
 
     # Admin panel tugmalari
+    # Eslatma: tg() orqali tashqi (outbound) so'rovlar konteynerda "Connection
+    # timeout"ga uchragani uchun, javoblar Telegram webhook javobi ichida
+    # {"method": "sendMessage", ...} ko'rinishida qaytariladi — buni Telegram
+    # o'zi bajaradi, bizning konteynerdan outbound chaqiruv kerak emas.
     if data.startswith("admin_"):
         if from_id != ADMIN_ID:
-            await tg("answerCallbackQuery", callback_query_id=cq_id, text="⛔ Ruxsat yo'q.", show_alert=True)
-            return JSONResponse({"ok": True})
-        await tg("answerCallbackQuery", callback_query_id=cq_id)
+            return JSONResponse({
+                "method": "answerCallbackQuery", "callback_query_id": cq_id,
+                "text": "⛔ Ruxsat yo'q.", "show_alert": True
+            })
 
         if data == "admin_stats":
             report = await asyncio.to_thread(db.get_stats_report)
-            await tg("sendMessage", chat_id=chat_id, text=report, parse_mode="HTML")
+            if len(report) > 4096:
+                report = report[:4090] + "\n…"
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": report, "parse_mode": "HTML"})
 
         elif data == "admin_plusadd":
-            db.set_state(str(from_id), "admin_plusadd_id")
-            await tg("sendMessage", chat_id=chat_id,
-                text="➕ <b>Plus berish</b>\n\nFoydalanuvchi ID sini yuboring:\n<i>Misol: 123456789</i>",
-                parse_mode="HTML")
+            await asyncio.to_thread(db.set_state, str(from_id), "admin_plusadd_id")
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                "text": "➕ <b>Plus berish</b>\n\nFoydalanuvchi ID sini yuboring:\n<i>Misol: 123456789</i>",
+                "parse_mode": "HTML"})
 
         elif data == "admin_plusremove":
-            db.set_state(str(from_id), "admin_plusremove_id")
-            await tg("sendMessage", chat_id=chat_id,
-                text="➖ <b>Plus o'chirish</b>\n\nFoydalanuvchi ID sini yuboring:\n<i>Misol: 123456789</i>",
-                parse_mode="HTML")
+            await asyncio.to_thread(db.set_state, str(from_id), "admin_plusremove_id")
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                "text": "➖ <b>Plus o'chirish</b>\n\nFoydalanuvchi ID sini yuboring:\n<i>Misol: 123456789</i>",
+                "parse_mode": "HTML"})
 
         elif data == "admin_pluscheck":
-            db.set_state(str(from_id), "admin_pluscheck_id")
-            await tg("sendMessage", chat_id=chat_id,
-                text="🔍 <b>Plus tekshirish</b>\n\nFoydalanuvchi ID sini yuboring:\n<i>Misol: 123456789</i>",
-                parse_mode="HTML")
+            await asyncio.to_thread(db.set_state, str(from_id), "admin_pluscheck_id")
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                "text": "🔍 <b>Plus tekshirish</b>\n\nFoydalanuvchi ID sini yuboring:\n<i>Misol: 123456789</i>",
+                "parse_mode": "HTML"})
 
         elif data == "admin_userlist":
             users = await asyncio.to_thread(db.get_all_users_info)
             if not users:
-                await tg("sendMessage", chat_id=chat_id, text="👤 Hozirda foydalanuvchilar yo'q.")
+                text_out = "👤 Hozirda foydalanuvchilar yo'q."
             else:
                 lines = [f"👤 <b>Barcha foydalanuvchilar ({len(users)} ta):</b>\n"]
                 for u in users:
@@ -814,30 +817,33 @@ async def handle_callback_query(query: dict):
                     badge = "💎" if u['is_plus'] else "🆓"
                     lines.append(f"{badge} <code>{u['user_id']}</code> | {name} | {u['join_date']}")
                 text_out = "\n".join(lines)
-                for i in range(0, len(text_out), 4000):
-                    await tg("sendMessage", chat_id=chat_id, text=text_out[i:i+4000], parse_mode="HTML")
+                if len(text_out) > 4096:
+                    text_out = text_out[:4090] + "\n…"
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": text_out, "parse_mode": "HTML"})
 
         elif data == "admin_pluslist":
             users = await asyncio.to_thread(db.get_premium_users)
             if not users:
-                await tg("sendMessage", chat_id=chat_id, text="👥 Hozirda faol Plus foydalanuvchilar yo'q.")
+                text_out = "👥 Hozirda faol Plus foydalanuvchilar yo'q."
             else:
                 lines = [f"👥 <b>Faol Plus foydalanuvchilar ({len(users)} ta):</b>\n"]
                 for u in users:
                     name = u["username"] or "—"
                     lines.append(f"• <code>{u['user_id']}</code> | {name} | {fmt_date(u['until'])} gacha")
-                await tg("sendMessage", chat_id=chat_id, text="\n".join(lines), parse_mode="HTML")
+                text_out = "\n".join(lines)
+                if len(text_out) > 4096:
+                    text_out = text_out[:4090] + "\n…"
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id, "text": text_out, "parse_mode": "HTML"})
 
         elif data == "admin_broadcast":
-            db.set_state(str(from_id), "waiting_broadcast")
-            await tg("sendMessage", chat_id=chat_id,
-                text="📢 <b>Reklama yuborish</b>\n\nXabarni yozing (matn, rasm yoki video):\n\n❌ Bekor: /start",
-                parse_mode="HTML")
+            await asyncio.to_thread(db.set_state, str(from_id), "waiting_broadcast")
+            return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                "text": "📢 <b>Reklama yuborish</b>\n\nXabarni yozing (matn, rasm yoki video):\n\n❌ Bekor: /start",
+                "parse_mode": "HTML"})
 
         return JSONResponse({"ok": True})
 
-    await tg("answerCallbackQuery", callback_query_id=cq_id)
-    return JSONResponse({"ok": True})
+    return JSONResponse({"method": "answerCallbackQuery", "callback_query_id": cq_id})
 
 
 @app.post("/webhook/bot")
