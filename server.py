@@ -320,8 +320,15 @@ def _convert_unit(amount, conv_type):
 _TG_TIMEOUT = aiohttp.ClientTimeout(total=60, connect=15)
 
 def _ipv4_connector():
-    """IPv6 marshrut muammosi tufayli 'Connection timeout' bo'lmasligi uchun faqat IPv4."""
-    return aiohttp.TCPConnector(family=socket.AF_INET)
+    """Konteyner ichidagi standart DNS sekin/ishlamay qolishi va IPv6 marshrut
+    muammosi tufayli 'Connection timeout' bo'lmasligi uchun: faqat IPv4 +
+    Cloudflare/Google DNS orqali nom hal qilish."""
+    try:
+        resolver = aiohttp.resolver.AsyncResolver(nameservers=["1.1.1.1", "1.0.0.1", "8.8.8.8"])
+    except Exception as e:
+        print(f"[!] AsyncResolver mavjud emas ({e}), oddiy IPv4 connector ishlatiladi")
+        return aiohttp.TCPConnector(family=socket.AF_INET)
+    return aiohttp.TCPConnector(family=socket.AF_INET, resolver=resolver)
 
 def fmt_date(date_str):
     try:
