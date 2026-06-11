@@ -9,16 +9,22 @@ import aiohttp
 from typing import Optional
 # --- 1. DNS PATCH ---
 def apply_dns_patch():
+    """Konteynerda IPv6 marshrutlash ishlamay/sekin ishlaydi va getaddrinfo IPv6
+    yozuvini birinchi qaytarsa, har bir tashqi ulanish (Supabase, OpenAI va h.k.)
+    avval IPv6'ga urinib vaqt yo'qotadi ('ConnectionTerminated'/timeout). Shu sabab
+    natijalardan faqat IPv4 (AF_INET) yozuvlarni qoldiramiz — butun jarayon uchun."""
     try:
         old_getaddrinfo = socket.getaddrinfo
         def new_getaddrinfo(*args, **kwargs):
             try:
-                return old_getaddrinfo(*args, **kwargs)
+                results = old_getaddrinfo(*args, **kwargs)
             except socket.gaierror as e:
                 print(f"[!] DNS xatosi: {args[0]} — {e}")
                 raise
+            ipv4 = [r for r in results if r[0] == socket.AF_INET]
+            return ipv4 or results
         socket.getaddrinfo = new_getaddrinfo
-        print("[*] DNS Patch applied.")
+        print("[*] DNS Patch applied (IPv4-only).")
     except Exception as e:
         print(f"[!] DNS Patch failed: {e}")
 
@@ -776,7 +782,7 @@ async def handle_callback_query(query: dict):
         await tg("answerCallbackQuery", callback_query_id=cq_id)
 
         if data == "admin_stats":
-            report = db.get_stats_report()
+            report = await asyncio.to_thread(db.get_stats_report)
             await tg("sendMessage", chat_id=chat_id, text=report, parse_mode="HTML")
 
         elif data == "admin_plusadd":
@@ -798,7 +804,7 @@ async def handle_callback_query(query: dict):
                 parse_mode="HTML")
 
         elif data == "admin_userlist":
-            users = db.get_all_users_info()
+            users = await asyncio.to_thread(db.get_all_users_info)
             if not users:
                 await tg("sendMessage", chat_id=chat_id, text="👤 Hozirda foydalanuvchilar yo'q.")
             else:
@@ -812,7 +818,7 @@ async def handle_callback_query(query: dict):
                     await tg("sendMessage", chat_id=chat_id, text=text_out[i:i+4000], parse_mode="HTML")
 
         elif data == "admin_pluslist":
-            users = db.get_premium_users()
+            users = await asyncio.to_thread(db.get_premium_users)
             if not users:
                 await tg("sendMessage", chat_id=chat_id, text="👥 Hozirda faol Plus foydalanuvchilar yo'q.")
             else:
