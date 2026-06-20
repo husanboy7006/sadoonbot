@@ -438,17 +438,32 @@ async def bg_shazam(chat_id, audio_path):
         if os.path.exists(audio_path): os.remove(audio_path)
 
 async def bg_mix_clip(chat_id, user_id, p, a, v):
+    # Bu background task bo'lgani uchun tg() outbound chaqiruvi ishlatiladi.
+    # Klip yaratish uzoq vaqt oladi (FFmpeg), shuning uchun inline o'zgartirish mumkin emas.
     try:
         await mixer.mix_image_audio(p, a, v)
         file_url = f"{BASE_URL}/output/{os.path.basename(v)}"
-        asyncio.create_task(_cleanup_file(v, 300))
+        asyncio.create_task(_cleanup_file(v, 600))
         db.log_stats(user_id, "mix")
-        await tg("sendVideo", chat_id=chat_id, video=file_url, supports_streaming=True)
+        # URL orqali yuborish (kichik JSON POST, tez bo'ladi)
+        resp = await tg("sendVideo", chat_id=chat_id, video=file_url, supports_streaming=True)
+        if not resp.get("ok"):
+            # Fallback: fayl sifatida yuborish
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=180), connector=_ipv4_connector()
+            ) as s:
+                with open(v, "rb") as f:
+                    form = aiohttp.FormData()
+                    form.add_field("chat_id", str(chat_id))
+                    form.add_field("supports_streaming", "true")
+                    form.add_field("video", f, filename=os.path.basename(v), content_type="video/mp4")
+                    async with s.post(f"{TG_API}/sendVideo", data=form) as r:
+                        pass
     except Exception as e:
         await tg_send(chat_id, f"❌ Klip yaratishda xatolik: {str(e)[:200]}")
     finally:
         for f in [p, a]:
-            if os.path.exists(f): os.remove(f)
+            if f and os.path.exists(f): os.remove(f)
 
 async def bg_download(chat_id, user_id, url):
     filename = f"v_{uuid.uuid4()}.mp4"
@@ -506,7 +521,7 @@ async def bg_download(chat_id, user_id, url):
                             print(f"[!] sendVideo (file) failed: {resp2}")
                             await tg_send(chat_id, f"❌ Video yuborishda xatolik: {resp2.get('description', '')}")
 
-        asyncio.create_task(_cleanup_file(output, 120))
+        asyncio.create_task(_cleanup_file(output, 600))
     except (asyncio.TimeoutError, asyncio.CancelledError):
         if os.path.exists(output): os.remove(output)
         await tg_send(chat_id, "⏰ 55 soniya ichida yuklanmadi. Video juda katta yoki sayt bloklangan.")
@@ -1219,11 +1234,41 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         if urls:
             db.set_state(user_id, None)
             url = urls[0].strip('.,()!?')
-            background_tasks.add_task(bg_download, chat_id, user_id, url)
-            return JSONResponse({
-                "method": "sendMessage", "chat_id": chat_id,
-                "text": "⏳ Video yuklanmoqda, biroz kuting...\n\n(Instagram uchun 30-40 soniya kerak bo'lishi mumkin)"
-            })
+            # Inline download + JSON-response: outbound tg() chaqiruvi HF Space'da
+            # timeout bo'lgani uchun, video webhook javobi ichida {"method":"sendVideo"}
+            # ko'rinishida qaytariladi — Telegramning o'zi foydalanuvchiga yuboradi.
+            _dl_filename = f"v_{uuid.uuid4()}.mp4"
+            _dl_output = f"output/{_dl_filename}"
+            try:
+                _dl_ok = await asyncio.wait_for(
+                    mixer.download_video(url, _dl_output), timeout=55
+                )
+                if _dl_ok and os.path.exists(_dl_output) and os.path.getsize(_dl_output) > 1000:
+                    _dl_size = os.path.getsize(_dl_output)
+                    if _dl_size > 50 * 1024 * 1024:
+                        os.remove(_dl_output)
+                        return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                            "text": "❌ Video 50MB dan katta. Qisqaroq video sinab ko'ring."})
+                    file_url = f"{BASE_URL}/output/{_dl_filename}"
+                    asyncio.create_task(_cleanup_file(_dl_output, 600))
+                    db.log_stats(user_id, "download")
+                    return JSONResponse({
+                        "method": "sendVideo", "chat_id": chat_id,
+                        "video": file_url, "supports_streaming": True,
+                        "caption": "🤖 <b>Sadoon AI</b> — video yuklab olish, tarjimon, SMM va boshqa xizmatlar!\n👉 @sadoon_ai_bot",
+                        "parse_mode": "HTML"
+                    })
+                if os.path.exists(_dl_output): os.remove(_dl_output)
+                return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                    "text": "❌ Yuklab bo'lmadi. TikTok yoki YouTube havolasini sinab ko'ring."})
+            except asyncio.TimeoutError:
+                if os.path.exists(_dl_output): os.remove(_dl_output)
+                return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                    "text": "⏰ 55 soniya ichida yuklanmadi. Video juda katta yoki sayt bloklangan."})
+            except Exception as _e:
+                if os.path.exists(_dl_output): os.remove(_dl_output)
+                return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                    "text": f"❌ Xatolik: {str(_e)[:200]}"})
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
             "text": "❌ Havola topilmadi. Iltimos, to'g'ri URL yuboring."

@@ -101,22 +101,18 @@ async def download_instagram(url: str, output_path: str):
 async def download_video(url: str, output_path: str):
     print(f"[*] Video yuklash: {url[:30]}...")
 
-    # 1. TikTok uchun maxsus TikWM
+    # 1. TikTok uchun maxsus TikWM (eng tez)
     if "tiktok.com" in url:
         v_url = await download_tiktok_tikwm(url)
         if v_url and await download_directly(v_url, output_path): return True
 
-    # 2. Instagram uchun instaloader
-    if "instagram.com" in url:
-        if await download_instagram(url, output_path): return True
-        print("[!] Instaloader failed, trying cobalt...")
+    # 2. Instagram — instaloader 2023-dan login talab qiladi va hamma vaqt ishlamaydi.
+    #    60 soniya behuda sarflanmasligi uchun to'g'ridan Cobalt/yt-dlp'ga o'tamiz.
 
-    # 3. Cobalt API Fallbacks
+    # 3. Cobalt API Fallbacks (faqat 2 ta eng ishonchli mirror)
     cobalt_mirrors = [
         "https://api.cobalt.tools/api/json",
         "https://cobalt-api.kwiateusz.xyz/api/json",
-        "https://co.wuk.sh/api/json",
-        "https://cobalt.pervage.xyz/api/json"
     ]
     for mirror in cobalt_mirrors:
         print(f"[*] Try Cobalt Mirror: {mirror}")
@@ -126,7 +122,7 @@ async def download_video(url: str, output_path: str):
             return True
 
     # 4. Yt-dlp Fallback
-    print("[*] Try yt-dlp fallback with cookies...")
+    print("[*] Try yt-dlp fallback...")
     return await yt_dlp_download(url, output_path, is_audio=False)
 
 async def search_and_download_music(query: str, output_path: str):
@@ -167,18 +163,23 @@ async def yt_dlp_download(url, output_path, is_audio=False):
         is_youtube = "youtube.com" in url or "youtu.be" in url
 
         ydl_opts = {
-            'format': 'bestaudio/best' if is_audio else 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[filesize<?50M]/best',
+            'format': (
+                'bestaudio/best' if is_audio
+                else 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best'
+            ),
             'outtmpl': output_path.replace('.mp3', '') if is_audio else output_path,
+            'merge_output_format': 'mp4',
             'ffmpeg_location': ffmpeg_binary,
-            'quiet': False,
-            'no_warnings': False,
+            'quiet': True,
+            'no_warnings': True,
             'ignoreerrors': False,
-            'socket_timeout': 30,
+            'socket_timeout': 20,
+            'retries': 2,
         }
 
         if is_youtube:
             ydl_opts['extractor_args'] = {
-                'youtube': {'player_clients': ['ios', 'web_creator', 'android']}
+                'youtube': {'player_clients': ['ios', 'android']}
             }
             ydl_opts['http_headers'] = {
                 'User-Agent': 'com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip'
@@ -200,13 +201,14 @@ async def yt_dlp_download(url, output_path, is_audio=False):
                 ydl.download([url])
 
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(_executor, _run)
+        # 40 soniya timeout — run_in_executor hech qachon yakunlanmasligi uchun
+        try:
+            await asyncio.wait_for(loop.run_in_executor(_executor, _run), timeout=40)
+        except asyncio.TimeoutError:
+            print("[!] yt-dlp timeout (40s)")
+            return False
 
         if is_audio:
-            if os.path.exists(output_path + ".mp3"):
-                if os.path.exists(output_path): os.remove(output_path)
-                os.rename(output_path + ".mp3", output_path)
-                return True
             return os.path.exists(output_path)
         return os.path.exists(output_path) and os.path.getsize(output_path) > 1000
     except Exception as e:
@@ -218,7 +220,7 @@ async def download_directly(url, path):
     try:
         headers = {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"}
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers, timeout=60) as response:
+            async with session.get(url, headers=headers, timeout=30) as response:
                 if response.status != 200:
                     return False
                 with open(path, 'wb') as f:
