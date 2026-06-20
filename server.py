@@ -231,6 +231,13 @@ from calc_parser import safe_calc, format_result, CalcError
 _calc_expr: dict = {}
 _calc_history: dict = {}
 _calc_awaiting: dict = {}
+_CALC_MAX_USERS = 500
+
+def _calc_trim():
+    for d in (_calc_expr, _calc_history, _calc_awaiting):
+        if len(d) > _CALC_MAX_USERS:
+            for k in list(d.keys())[: len(d) - _CALC_MAX_USERS]:
+                d.pop(k, None)
 
 def _cb(t, d): return {"text": t, "callback_data": d}
 
@@ -508,7 +515,7 @@ async def bg_download(chat_id, user_id, url):
         await tg_send(chat_id, f"❌ Xatolik: {str(e)[:200]}")
 
 async def bg_broadcast(admin_chat_id, msg: dict):
-    users = db.get_all_users()
+    users = await asyncio.to_thread(db.get_all_users)
     total = len(users)
     sent = 0
     failed = 0
@@ -547,20 +554,36 @@ async def bg_smm(chat_id, user_id, text, mode):
             f"💎 Ko'proq ishlash uchun Plus oling:"
         ), parse_mode="HTML", reply_markup=keyboard)
         return
+    if not openai_client and not groq_client:
+        await tg("sendMessage", chat_id=chat_id,
+            text="❌ AI xizmati mavjud emas. Keyinroq urinib ko'ring.", reply_markup=SMM_KB)
+        return
     result = None
     try:
-        response = await openai_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": SMM_PROMPTS[mode]},
-                {"role": "user", "content": text},
-            ],
-            max_tokens=SMM_MAX_TOKENS,
-            temperature=SMM_TEMPERATURE,
-        )
-        result = response.choices[0].message.content
+        if openai_client:
+            response = await openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": SMM_PROMPTS[mode]},
+                    {"role": "user", "content": text},
+                ],
+                max_tokens=SMM_MAX_TOKENS,
+                temperature=SMM_TEMPERATURE,
+            )
+            result = response.choices[0].message.content
+        elif groq_client:
+            resp = await groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": SMM_PROMPTS[mode]},
+                    {"role": "user", "content": text},
+                ],
+                max_tokens=SMM_MAX_TOKENS,
+                temperature=SMM_TEMPERATURE,
+            )
+            result = resp.choices[0].message.content
     except Exception as e:
-        logging.error(f"OpenAI xato: {e}")
+        logging.error(f"SMM AI xato: {e}")
     if result is None:
         await tg("sendMessage", chat_id=chat_id, text="❌ Xatolik yuz berdi. Qaytadan urinib ko'ring.", reply_markup=SMM_KB)
     else:
@@ -613,8 +636,13 @@ async def handle_callback_query(query: dict):
             await tg("answerCallbackQuery", callback_query_id=cq_id, text="⛔ Ruxsat yo'q.", show_alert=True)
             return JSONResponse({"ok": True})
         await tg("answerCallbackQuery", callback_query_id=cq_id)
-        _, uid, days = data.split("_")
-        uid, days = int(uid), int(days)
+        parts = data.split("_", 2)
+        if len(parts) != 3:
+            return JSONResponse({"ok": True})
+        try:
+            uid, days = int(parts[1]), int(parts[2])
+        except ValueError:
+            return JSONResponse({"ok": True})
         until = db.activate_premium(str(uid), days)
         old_caption = query["message"].get("caption", "")
         await tg("editMessageCaption", chat_id=chat_id, message_id=msg_id,
@@ -672,6 +700,7 @@ async def handle_callback_query(query: dict):
     # 🧮 Kalkulator callback
     if data.startswith("c_"):
         await tg("answerCallbackQuery", callback_query_id=cq_id)
+        _calc_trim()
         uid = str(from_id)
         action = data[2:]
         expr = _calc_expr.get(uid, "")
@@ -1201,22 +1230,32 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         })
 
     if state == "waiting_shazam":
-        db.set_state(user_id, None)
         a = f"temp/shazam_{uuid.uuid4()}.mp3"
         if audio:
-            await tg_download(audio["file_id"], a)
+            try:
+                await tg_download(audio["file_id"], a)
+            except Exception:
+                return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                    "text": "❌ Audio yuklab bo'lmadi. Qaytadan yuboring."})
+            db.set_state(user_id, None)
             background_tasks.add_task(bg_shazam, chat_id, a)
             return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
                 "text": "🔍 Qo'shiq aniqlanmoqda..."})
         elif msg.get("video") or msg.get("video_note"):
             file_id = (msg.get("video") or msg.get("video_note"))["file_id"]
-            await tg_download(file_id, a)
+            try:
+                await tg_download(file_id, a)
+            except Exception:
+                return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                    "text": "❌ Video yuklab bo'lmadi. Qaytadan yuboring."})
+            db.set_state(user_id, None)
             background_tasks.add_task(bg_shazam, chat_id, a)
             return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
                 "text": "🔍 Qo'shiq aniqlanmoqda..."})
         elif text:
             urls = re.findall(r'https?://[^\s]+', text)
             if urls:
+                db.set_state(user_id, None)
                 background_tasks.add_task(bg_shazam_url, chat_id, user_id, urls[0].strip('.,()!?'), a)
                 return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
                     "text": "⏳ Audio yuklanmoqda, qo'shiq aniqlanmoqda..."})
@@ -1339,6 +1378,7 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         p = f"temp/p_{uuid.uuid4()}.jpg"
         v = f"output/v_{uuid.uuid4()}.mp4"
         tmp_v = f"temp/tv_{uuid.uuid4()}.mp4"
+        a = None
         try:
             await tg_download(photo_id, p)
 
@@ -1386,12 +1426,12 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
                 "text": "⏳ Klip tayyorlanmoqda, biroz kuting..."})
         except asyncio.TimeoutError:
             for f in [p, a, tmp_v]:
-                if os.path.exists(f): os.remove(f)
+                if f and os.path.exists(f): os.remove(f)
             return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
                 "text": "⏰ Vaqt tugadi. Qisqaroq video sinab ko'ring."})
         except Exception as e:
             for f in [p, a, tmp_v]:
-                if os.path.exists(f): os.remove(f)
+                if f and os.path.exists(f): os.remove(f)
             return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
                 "text": f"❌ Xato: {str(e)[:200]}"})
 
@@ -1437,11 +1477,11 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
                 ),
                 "parse_mode": "HTML", "reply_markup": keyboard
             })
-        if not openai_client:
+        if not openai_client and not groq_client:
             db.set_state(user_id, None)
             return JSONResponse({
                 "method": "sendMessage", "chat_id": chat_id,
-                "text": "❌ OpenAI API kalit sozlanmagan.", "reply_markup": SMM_KB
+                "text": "❌ AI xizmati sozlanmagan.", "reply_markup": SMM_KB
             })
         mode = state
         db.set_state(user_id, None)

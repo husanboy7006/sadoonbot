@@ -35,7 +35,10 @@ async def download_audio(url: str, output_path: str):
         v_url = await download_tiktok_tikwm(url)
         if v_url and await download_directly(v_url, output_path + ".temp.mp4"):
             try:
-                AudioSegment.from_file(output_path + ".temp.mp4").export(output_path, format="mp3", bitrate="192k")
+                loop = asyncio.get_event_loop()
+                tmp = output_path + ".temp.mp4"
+                await loop.run_in_executor(_executor,
+                    lambda: AudioSegment.from_file(tmp).export(output_path, format="mp3", bitrate="192k"))
                 if os.path.exists(output_path + ".temp.mp4"): os.remove(output_path + ".temp.mp4")
                 return True
             except Exception as e:

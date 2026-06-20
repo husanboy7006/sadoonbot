@@ -161,7 +161,12 @@ class Parser:
         if self.peek() and self.peek()[0] == "OP" and self.peek()[1] == "^":
             self.consume()
             right = self.unary()
-            left = left ** right
+            if abs(right) > 300:
+                raise CalcError("Daraja juda katta (maks 300)!")
+            try:
+                left = left ** right
+            except OverflowError:
+                raise CalcError("Son juda katta!")
         return left
 
     def unary(self) -> float:
@@ -235,7 +240,16 @@ def safe_calc(expression: str) -> Union[str, float]:
     # Oddiy hisoblash
     tokens = tokenize(expression)
     parser = Parser(tokens)
-    result = parser.parse()
+    try:
+        result = parser.parse()
+    except CalcError:
+        raise
+    except OverflowError:
+        raise CalcError("Son juda katta!")
+    except ZeroDivisionError:
+        raise CalcError("Nolga bo'lish mumkin emas!")
+    except Exception as e:
+        raise CalcError(f"Hisoblash xatosi: {e}")
 
     # Overflow tekshiruv
     if abs(result) > MAX_NUMBER:

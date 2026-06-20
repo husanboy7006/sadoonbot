@@ -1,6 +1,5 @@
 requests
 aiohttp
-aiodns
 pydub
 yt-dlp>=2025.1.15
 fastapi

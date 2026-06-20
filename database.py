@@ -66,7 +66,7 @@ class Database:
     def get_all_users(self):
         if not self.supabase: return []
         try:
-            res = self.supabase.table("users").select("user_id").execute()
+            res = self.supabase.table("users").select("user_id").limit(10000).execute()
             return [row['user_id'] for row in res.data]
         except Exception as e:
             print(f"Error fetching users: {e}")
@@ -77,7 +77,7 @@ class Database:
         from datetime import date
         today = str(date.today())
         try:
-            res = self.supabase.table("users").select("user_id, username, join_date, metadata").execute()
+            res = self.supabase.table("users").select("user_id, username, join_date, metadata").limit(10000).execute()
             result = []
             for row in (res.data or []):
                 meta = row.get("metadata") or {}
@@ -130,6 +130,7 @@ class Database:
         return until
 
     def get_daily_smm(self, user_id):
+        if not self.supabase: return 0
         from datetime import date
         today = str(date.today())
         meta = self.get_user_metadata(user_id)
@@ -150,6 +151,7 @@ class Database:
 
     def try_smm(self, user_id, free_limit, premium_limit):
         """Limitni tekshirib, ruxsat bo'lsa increment qiladi. (False, used, limit) yoki (True, new_count, limit)"""
+        if not self.supabase: return True, 0, free_limit, False
         from datetime import date
         today = str(date.today())
         is_prem = self.is_premium(user_id)
@@ -179,7 +181,7 @@ class Database:
         from datetime import date
         today = str(date.today())
         try:
-            res = self.supabase.table("users").select("user_id, username, metadata").execute()
+            res = self.supabase.table("users").select("user_id, username, metadata").limit(10000).execute()
             result = []
             for row in (res.data or []):
                 meta = row.get("metadata") or {}
@@ -235,7 +237,7 @@ class Database:
             # 2. Bugungi yangi odamlar
             new_users_today = 0
             try:
-                new_res = self.supabase.table("users").select("user_id", count="exact").filter("join_date", "gte", f"{today} 00:00:00").execute()
+                new_res = self.supabase.table("users").select("user_id", count="exact").filter("join_date", "gte", f"{today} 00:00:00").limit(10000).execute()
                 new_users_today = new_res.count if new_res.count is not None else 0
             except Exception as e:
                 print(f"[DB] get_stats_report new users error: {e}")
@@ -248,7 +250,7 @@ class Database:
             try:
                 today_res = self.supabase.table("stats").select("service_type").filter(
                     "timestamp", "gte", f"{today} 00:00:00"
-                ).execute()
+                ).limit(10000).execute()
                 for item in (today_res.data or []):
                     stype = item.get("service_type", "download")
                     if stype in today_bd:
@@ -261,7 +263,7 @@ class Database:
                         "smm_post": 0, "smm_reels": 0, "smm_plan": 0,
                         "smm_hashtag": 0, "smm_caption": 0, "smm_strategy": 0}
             try:
-                total_res = self.supabase.table("stats").select("service_type", count="exact").execute()
+                total_res = self.supabase.table("stats").select("service_type", count="exact").limit(10000).execute()
                 total_count = total_res.count or 0
                 for item in (total_res.data or []):
                     stype = item.get("service_type", "download")
