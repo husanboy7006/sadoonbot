@@ -18,7 +18,10 @@ async def download_tiktok_tikwm(url: str):
     print(f"[*] TikTok (TikWM): {url[:30]}...")
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post("https://www.tikwm.com/api/", data={'url': url}, timeout=15) as response:
+            async with session.post(
+                "https://www.tikwm.com/api/", data={'url': url},
+                timeout=aiohttp.ClientTimeout(total=8)
+            ) as response:
                 r = await response.json()
                 if r.get('code') == 0:
                     play = r['data']['play']
@@ -99,30 +102,43 @@ async def download_instagram(url: str, output_path: str):
     return False
 
 async def download_video(url: str, output_path: str):
-    print(f"[*] Video yuklash: {url[:30]}...")
+    print(f"[*] Video yuklash: {url[:60]}...")
 
-    # 1. TikTok uchun maxsus TikWM (eng tez)
+    # TikTok — TikWM (8s API) + to'g'ridan yuklash (15s), muvaffaqiyatsiz bo'lsa yt-dlp (35s)
+    # Jami maksimal: 8+15+35 = 58s, lekin tashqi wait_for(55) tomonidan qisqartiriladi
     if "tiktok.com" in url:
+        print("[*] TikTok — TikWM sinab ko'rilmoqda...")
         v_url = await download_tiktok_tikwm(url)
-        if v_url and await download_directly(v_url, output_path): return True
-
-    # 2. Instagram — instaloader 2023-dan login talab qiladi va hamma vaqt ishlamaydi.
-    #    60 soniya behuda sarflanmasligi uchun to'g'ridan Cobalt/yt-dlp'ga o'tamiz.
-
-    # 3. Cobalt API Fallbacks (faqat 2 ta eng ishonchli mirror)
-    cobalt_mirrors = [
-        "https://api.cobalt.tools/api/json",
-        "https://cobalt-api.kwiateusz.xyz/api/json",
-    ]
-    for mirror in cobalt_mirrors:
-        print(f"[*] Try Cobalt Mirror: {mirror}")
-        v_url = await get_cobalt_url_custom(url, mirror, "video")
-        if v_url and await download_directly(v_url, output_path):
-            print("[+] Cobalt success!")
+        if v_url and await download_directly(v_url, output_path, timeout=15):
+            print("[+] TikWM muvaffaqiyatli!")
             return True
+        print("[!] TikWM muvaffaqiyatsiz, yt-dlp...")
+        return await yt_dlp_download(url, output_path, is_audio=False)
 
-    # 4. Yt-dlp Fallback
-    print("[*] Try yt-dlp fallback...")
+    # YouTube — Cobalt YouTube videoini yuklab bera olmaydi; yt-dlp bevosita (35s)
+    if "youtube.com" in url or "youtu.be" in url:
+        print("[*] YouTube — yt-dlp bevosita...")
+        return await yt_dlp_download(url, output_path, is_audio=False)
+
+    # Instagram — Cobalt (5+15=20s), muvaffaqiyatsiz bo'lsa yt-dlp (35s)
+    # Jami maksimal: 20+35 = 55s ✓
+    if "instagram.com" in url:
+        print("[*] Instagram — Cobalt sinab ko'rilmoqda...")
+        v_url = await get_cobalt_url_custom(url, "https://api.cobalt.tools/api/json", "video")
+        if v_url and await download_directly(v_url, output_path, timeout=15):
+            print("[+] Instagram Cobalt muvaffaqiyatli!")
+            return True
+        print("[!] Cobalt Instagram uchun muvaffaqiyatsiz, yt-dlp...")
+        return await yt_dlp_download(url, output_path, is_audio=False)
+
+    # Boshqa platformalar (Twitter, Pinterest, va h.k.) — Cobalt 1 mirror (20s), keyin yt-dlp (35s)
+    # Jami maksimal: 20+35 = 55s ✓
+    print(f"[*] Cobalt sinab ko'rilmoqda...")
+    v_url = await get_cobalt_url_custom(url, "https://api.cobalt.tools/api/json", "video")
+    if v_url and await download_directly(v_url, output_path, timeout=15):
+        print("[+] Cobalt muvaffaqiyatli!")
+        return True
+    print("[*] Cobalt muvaffaqiyatsiz, yt-dlp...")
     return await yt_dlp_download(url, output_path, is_audio=False)
 
 async def search_and_download_music(query: str, output_path: str):
@@ -157,10 +173,11 @@ async def search_and_download_music(query: str, output_path: str):
     return await yt_dlp_download(f"ytsearch1:{query}", output_path, is_audio=True)
 
 async def yt_dlp_download(url, output_path, is_audio=False):
-    print(f"[*] yt-dlp: {url[:30]} (Audio={is_audio})")
+    print(f"[*] yt-dlp: {url[:60]} (Audio={is_audio})")
     try:
         import yt_dlp
         is_youtube = "youtube.com" in url or "youtu.be" in url
+        is_instagram = "instagram.com" in url
 
         ydl_opts = {
             'format': (
@@ -173,8 +190,8 @@ async def yt_dlp_download(url, output_path, is_audio=False):
             'quiet': True,
             'no_warnings': True,
             'ignoreerrors': False,
-            'socket_timeout': 20,
-            'retries': 2,
+            'socket_timeout': 15,
+            'retries': 1,
         }
 
         if is_youtube:
@@ -183,6 +200,11 @@ async def yt_dlp_download(url, output_path, is_audio=False):
             }
             ydl_opts['http_headers'] = {
                 'User-Agent': 'com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip'
+            }
+        elif is_instagram:
+            ydl_opts['http_headers'] = {
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+                'Accept-Language': 'en-US,en;q=0.9',
             }
         else:
             ydl_opts['http_headers'] = {
@@ -201,11 +223,10 @@ async def yt_dlp_download(url, output_path, is_audio=False):
                 ydl.download([url])
 
         loop = asyncio.get_running_loop()
-        # 40 soniya timeout — run_in_executor hech qachon yakunlanmasligi uchun
         try:
-            await asyncio.wait_for(loop.run_in_executor(_executor, _run), timeout=40)
+            await asyncio.wait_for(loop.run_in_executor(_executor, _run), timeout=35)
         except asyncio.TimeoutError:
-            print("[!] yt-dlp timeout (40s)")
+            print("[!] yt-dlp timeout (35s)")
             return False
 
         if is_audio:
@@ -215,17 +236,20 @@ async def yt_dlp_download(url, output_path, is_audio=False):
         print(f"[!] yt-dlp error: {e}")
         return False
 
-async def download_directly(url, path):
-    print(f"[*] Downloading directly: {url[:30]}...")
+async def download_directly(url, path, timeout=20):
+    print(f"[*] Downloading directly: {url[:50]}...")
     try:
         headers = {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"}
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers, timeout=30) as response:
+            async with session.get(
+                url, headers=headers, timeout=aiohttp.ClientTimeout(total=timeout)
+            ) as response:
                 if response.status != 200:
+                    print(f"[!] download_directly HTTP {response.status}")
                     return False
                 with open(path, 'wb') as f:
                     while True:
-                        chunk = await response.content.read(1024*1024)
+                        chunk = await response.content.read(1024 * 1024)
                         if not chunk:
                             break
                         f.write(chunk)
@@ -239,7 +263,9 @@ async def get_cobalt_url_custom(url, api_url, mode):
     data = {"url": url, "videoQuality": "720", "downloadMode": mode, "audioFormat": "mp3"}
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(api_url, json=data, headers=headers, timeout=5) as response:
+            async with session.post(
+                api_url, json=data, headers=headers, timeout=aiohttp.ClientTimeout(total=5)
+            ) as response:
                 if response.status == 200:
                     res = await response.json()
                     if "url" in res: return res["url"]
