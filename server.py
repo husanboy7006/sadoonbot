@@ -383,87 +383,16 @@ async def _cleanup_file(path, delay=60):
         if os.path.exists(path): os.remove(path)
     except: pass
 
-async def bg_shazam_url(chat_id, user_id, url, audio_path):
-    tmp_v = audio_path + ".tmp.mp4"
-    try:
-        print(f"[Shazam] URL yuklanmoqda: {url[:50]}")
-        downloaded = await asyncio.wait_for(
-            mixer.download_video(url, tmp_v), timeout=50
-        )
-        print(f"[Shazam] download_video={downloaded}, exists={os.path.exists(tmp_v)}, size={os.path.getsize(tmp_v) if os.path.exists(tmp_v) else 0}")
-        if downloaded and os.path.exists(tmp_v) and os.path.getsize(tmp_v) > 1000:
-            ok = await mixer.extract_audio_from_video(tmp_v, audio_path)
-            print(f"[Shazam] extract_audio={ok}, audio_exists={os.path.exists(audio_path)}, audio_size={os.path.getsize(audio_path) if os.path.exists(audio_path) else 0}")
-            if os.path.exists(tmp_v): os.remove(tmp_v)
-            if ok and os.path.exists(audio_path):
-                await bg_shazam(chat_id, audio_path)
-                return
-        if os.path.exists(tmp_v): os.remove(tmp_v)
-        await tg_send(chat_id,
-            "❌ Bu havoladan audio yuklab bo'lmadi.\n\n"
-            "💡 Instagram <b>foto post</b> (/p/...) ishlamaydi.\n"
-            "✅ Instagram <b>Reels</b> (/reel/...) yoki YouTube linkini yuboring.\n"
-            "Yoki audio/video faylni to'g'ridan-to'g'ri yuboring.", )
-    except asyncio.TimeoutError:
-        for f in [tmp_v, audio_path]:
-            if os.path.exists(f): os.remove(f)
-        await tg_send(chat_id, "⏰ Yuklab bo'lmadi. Boshqa havola sinab ko'ring.")
-    except Exception as e:
-        print(f"[Shazam] Exception: {e}")
-        for f in [tmp_v, audio_path]:
-            if os.path.exists(f): os.remove(f)
-        await tg_send(chat_id, f"❌ Xatolik: {str(e)[:200]}")
-
-async def bg_shazam(chat_id, audio_path):
-    try:
-        result = await asyncio.wait_for(mixer.identify_music(audio_path), timeout=30)
-        if result:
-            text = (
-                f"🎵 <b>{result['title']}</b>\n"
-                f"🎤 {result['artist']}\n"
-            )
-            if result.get("album"):
-                text += f"💿 {result['album']}\n"
-            if result.get("url"):
-                text += f"\n🔗 <a href='{result['url']}'>Shazam da ochish</a>"
-            await tg("sendMessage", chat_id=chat_id, text=text,
-                     parse_mode="HTML", disable_web_page_preview=False)
-        else:
-            await tg_send(chat_id, "❌ Qo'shiq aniqlanmadi. Boshqa audio sinab ko'ring.")
-    except asyncio.TimeoutError:
-        await tg_send(chat_id, "⏰ Vaqt tugadi. Qaytadan urinib ko'ring.")
-    except Exception as e:
-        await tg_send(chat_id, f"❌ Xatolik: {str(e)[:200]}")
-    finally:
-        if os.path.exists(audio_path): os.remove(audio_path)
-
-async def bg_mix_clip(chat_id, user_id, p, a, v):
-    # Bu background task bo'lgani uchun tg() outbound chaqiruvi ishlatiladi.
-    # Klip yaratish uzoq vaqt oladi (FFmpeg), shuning uchun inline o'zgartirish mumkin emas.
-    try:
-        await mixer.mix_image_audio(p, a, v)
-        file_url = f"{BASE_URL}/output/{os.path.basename(v)}"
-        asyncio.create_task(_cleanup_file(v, 600))
-        db.log_stats(user_id, "mix")
-        # URL orqali yuborish (kichik JSON POST, tez bo'ladi)
-        resp = await tg("sendVideo", chat_id=chat_id, video=file_url, supports_streaming=True)
-        if not resp.get("ok"):
-            # Fallback: fayl sifatida yuborish
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=180), connector=_ipv4_connector()
-            ) as s:
-                with open(v, "rb") as f:
-                    form = aiohttp.FormData()
-                    form.add_field("chat_id", str(chat_id))
-                    form.add_field("supports_streaming", "true")
-                    form.add_field("video", f, filename=os.path.basename(v), content_type="video/mp4")
-                    async with s.post(f"{TG_API}/sendVideo", data=form) as r:
-                        pass
-    except Exception as e:
-        await tg_send(chat_id, f"❌ Klip yaratishda xatolik: {str(e)[:200]}")
-    finally:
-        for f in [p, a]:
-            if f and os.path.exists(f): os.remove(f)
+def _format_shazam_text(result: dict) -> str:
+    text = (
+        f"🎵 <b>{result['title']}</b>\n"
+        f"🎤 {result['artist']}\n"
+    )
+    if result.get("album"):
+        text += f"💿 {result['album']}\n"
+    if result.get("url"):
+        text += f"\n🔗 <a href='{result['url']}'>Shazam da ochish</a>"
+    return text
 
 async def bg_download(chat_id, user_id, url):
     filename = f"v_{uuid.uuid4()}.mp4"
@@ -1288,35 +1217,75 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         })
 
     if state == "waiting_shazam":
+        # Inline + JSON-response: orqa fon vazifasi outbound tg() talab qilardi,
+        # ulanish buzilganda natija hech qachon yetib bormasdi.
         a = f"temp/shazam_{uuid.uuid4()}.mp3"
+        file_id = None
         if audio:
-            try:
-                await tg_download(audio["file_id"], a)
-            except Exception:
-                return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
-                    "text": "❌ Audio yuklab bo'lmadi. Qaytadan yuboring."})
-            db.set_state(user_id, None)
-            background_tasks.add_task(bg_shazam, chat_id, a)
-            return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
-                "text": "🔍 Qo'shiq aniqlanmoqda..."})
+            file_id = audio["file_id"]
         elif msg.get("video") or msg.get("video_note"):
             file_id = (msg.get("video") or msg.get("video_note"))["file_id"]
+
+        if file_id:
             try:
                 await tg_download(file_id, a)
             except Exception:
                 return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
-                    "text": "❌ Video yuklab bo'lmadi. Qaytadan yuboring."})
+                    "text": "❌ Fayl yuklab bo'lmadi. Qaytadan yuboring."})
             db.set_state(user_id, None)
-            background_tasks.add_task(bg_shazam, chat_id, a)
+            try:
+                result = await asyncio.wait_for(mixer.identify_music(a), timeout=35)
+            except asyncio.TimeoutError:
+                result = None
+            finally:
+                if os.path.exists(a): os.remove(a)
+            if result:
+                db.log_stats(user_id, "shazam")
+                return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                    "text": _format_shazam_text(result), "parse_mode": "HTML",
+                    "disable_web_page_preview": False})
             return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
-                "text": "🔍 Qo'shiq aniqlanmoqda..."})
-        elif text:
+                "text": "❌ Qo'shiq aniqlanmadi. Boshqa audio sinab ko'ring."})
+
+        if text:
             urls = re.findall(r'https?://[^\s]+', text)
             if urls:
                 db.set_state(user_id, None)
-                background_tasks.add_task(bg_shazam_url, chat_id, user_id, urls[0].strip('.,()!?'), a)
-                return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
-                    "text": "⏳ Audio yuklanmoqda, qo'shiq aniqlanmoqda..."})
+                url = urls[0].strip('.,()!?')
+                tmp_v = a + ".tmp.mp4"
+                try:
+                    downloaded = await asyncio.wait_for(mixer.download_video(url, tmp_v), timeout=35)
+                    if downloaded and os.path.exists(tmp_v) and os.path.getsize(tmp_v) > 1000:
+                        ok = await mixer.extract_audio_from_video(tmp_v, a)
+                        if os.path.exists(tmp_v): os.remove(tmp_v)
+                        if ok and os.path.exists(a):
+                            result = await asyncio.wait_for(mixer.identify_music(a), timeout=18)
+                            if os.path.exists(a): os.remove(a)
+                            if result:
+                                db.log_stats(user_id, "shazam")
+                                return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                                    "text": _format_shazam_text(result), "parse_mode": "HTML",
+                                    "disable_web_page_preview": False})
+                            return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                                "text": "❌ Qo'shiq aniqlanmadi. Boshqa audio sinab ko'ring."})
+                    for f in [tmp_v, a]:
+                        if os.path.exists(f): os.remove(f)
+                    return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                        "text": "❌ Bu havoladan audio yuklab bo'lmadi.\n\n"
+                                "💡 Instagram <b>foto post</b> (/p/...) ishlamaydi.\n"
+                                "✅ Instagram <b>Reels</b> (/reel/...) yoki YouTube linkini yuboring.\n"
+                                "Yoki audio/video faylni to'g'ridan-to'g'ri yuboring."})
+                except asyncio.TimeoutError:
+                    for f in [tmp_v, a]:
+                        if os.path.exists(f): os.remove(f)
+                    return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                        "text": "⏰ Yuklab bo'lmadi. Boshqa havola sinab ko'ring."})
+                except Exception as e:
+                    for f in [tmp_v, a]:
+                        if os.path.exists(f): os.remove(f)
+                    return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                        "text": f"❌ Xatolik: {str(e)[:200]}"})
+
         return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
             "text": "❌ Audio fayl, video yoki havola yuboring."})
 
@@ -1466,9 +1435,9 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
                         "text": "❌ Havola topilmadi. Audio fayl yoki link yuboring."})
                 url = urls[0].strip('.,()!?')
                 a_base = f"temp/a_{uuid.uuid4()}"
-                # bestaudio yuklab, orijinal formatda saqlash
+                # bestaudio yuklab, orijinal formatda saqlash (35s — mixing uchun ham budjet qoldiramiz)
                 actual_a = await asyncio.wait_for(
-                    mixer.download_audio_raw(url, a_base), timeout=55
+                    mixer.download_audio_raw(url, a_base), timeout=35
                 )
                 if not actual_a:
                     return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
@@ -1479,16 +1448,32 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
                 return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
                     "text": "❌ Audio fayl yoki havola yuboring."})
 
-            background_tasks.add_task(bg_mix_clip, chat_id, user_id, p, a, v)
-            return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
-                "text": "⏳ Klip tayyorlanmoqda, biroz kuting..."})
+            # Inline mixing + JSON-response: orqa fon vazifasi outbound tg() talab
+            # qilardi, ulanish buzilganda natija hech qachon yetib bormasdi.
+            await asyncio.wait_for(mixer.mix_image_audio(p, a, v), timeout=20)
+            if not os.path.exists(v) or os.path.getsize(v) < 1000:
+                for f in [p, a, v]:
+                    if f and os.path.exists(f): os.remove(f)
+                return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
+                    "text": "❌ Klip yaratilmadi. Qaytadan urinib ko'ring."})
+            for f in [p, a]:
+                if f and os.path.exists(f): os.remove(f)
+            file_url = f"{BASE_URL}/output/{os.path.basename(v)}"
+            asyncio.create_task(_cleanup_file(v, 600))
+            db.log_stats(user_id, "mix")
+            return JSONResponse({
+                "method": "sendVideo", "chat_id": chat_id,
+                "video": file_url, "supports_streaming": True,
+                "caption": "🤖 <b>Sadoon AI</b> — klip tayyor!\n👉 @sadoon_ai_bot",
+                "parse_mode": "HTML"
+            })
         except asyncio.TimeoutError:
-            for f in [p, a, tmp_v]:
+            for f in [p, a, v, tmp_v]:
                 if f and os.path.exists(f): os.remove(f)
             return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
                 "text": "⏰ Vaqt tugadi. Qisqaroq video sinab ko'ring."})
         except Exception as e:
-            for f in [p, a, tmp_v]:
+            for f in [p, a, v, tmp_v]:
                 if f and os.path.exists(f): os.remove(f)
             return JSONResponse({"method": "sendMessage", "chat_id": chat_id,
                 "text": f"❌ Xato: {str(e)[:200]}"})
