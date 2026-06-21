@@ -330,7 +330,7 @@ def _convert_unit(amount, conv_type):
             f"<code>{amount:,.2f} {u2}</code> = <b>{bwd(amount):,.4f} {u1}</b>")
 
 # --- 7. TELEGRAM HELPERS ---
-_TG_TIMEOUT = aiohttp.ClientTimeout(total=60, connect=15)
+_TG_TIMEOUT = aiohttp.ClientTimeout(total=12, connect=8)
 
 def _ipv4_connector():
     """Konteynerda aiodns/c-ares orqali DNS-over-UDP (1.1.1.1/8.8.8.8) bloklangan
@@ -347,15 +347,15 @@ def fmt_date(date_str):
         return date_str
 
 async def tg(method, **kwargs):
-    for attempt in range(3):
+    for attempt in range(2):
         try:
             async with aiohttp.ClientSession(timeout=_TG_TIMEOUT, connector=_ipv4_connector()) as s:
                 async with s.post(f"{TG_API}/{method}", json=kwargs) as r:
                     return await r.json()
         except Exception as e:
             print(f"[TG] {method} attempt {attempt+1} failed: {e}")
-            if attempt < 2:
-                await asyncio.sleep(3)
+            if attempt < 1:
+                await asyncio.sleep(1)
     return {}
 
 async def tg_send(chat_id, text, **kwargs):
@@ -530,6 +530,16 @@ async def bg_download(chat_id, user_id, url):
         await tg_send(chat_id, f"❌ Xatolik: {str(e)[:200]}")
 
 async def bg_broadcast(admin_chat_id, msg: dict):
+    # Bu funksiya orqa fon vazifasida (webhook javobi allaqachon yuborilgan) ishlaydi,
+    # shuning uchun outbound tg() ishlamasa, adminga xabar ham yetib bormaydi.
+    # Avval 1 ta tezkor probe bilan ulanish borligini tekshiramiz — yo'q bo'lsa,
+    # 46 ta foydalanuvchini soatlab qayta-qayta urinib, botni sekinlashtirib
+    # o'tirmasdan, darhol to'xtaymiz.
+    probe = await tg("getMe")
+    if not probe or not probe.get("ok"):
+        print("[!] bg_broadcast: Telegram API'ga chiquvchi ulanish yo'q, reklama to'xtatildi.")
+        return
+
     users = await asyncio.to_thread(db.get_all_users)
     total = len(users)
     sent = 0
@@ -541,15 +551,18 @@ async def bg_broadcast(admin_chat_id, msg: dict):
     for user_id in users:
         try:
             if photo:
-                await tg("sendPhoto", chat_id=int(user_id),
+                res = await tg("sendPhoto", chat_id=int(user_id),
                          photo=photo[-1]["file_id"], caption=caption, parse_mode="HTML")
             elif video:
-                await tg("sendVideo", chat_id=int(user_id),
+                res = await tg("sendVideo", chat_id=int(user_id),
                          video=video["file_id"], caption=caption, parse_mode="HTML")
             else:
-                await tg("sendMessage", chat_id=int(user_id),
+                res = await tg("sendMessage", chat_id=int(user_id),
                          text=text_msg, parse_mode="HTML")
-            sent += 1
+            if res and res.get("ok"):
+                sent += 1
+            else:
+                failed += 1
         except Exception:
             failed += 1
         await asyncio.sleep(0.05)
@@ -1485,7 +1498,10 @@ async def webhook_handler(request: Request, background_tasks: BackgroundTasks):
         background_tasks.add_task(bg_broadcast, chat_id, msg)
         return JSONResponse({
             "method": "sendMessage", "chat_id": chat_id,
-            "text": "⏳ Reklama yuborilmoqda..."
+            "text": "⏳ Reklama yuborilmoqda (orqa fonda)...\n\n"
+                    "⚠️ Eslatma: agar bu xabardan keyin hech qanday yakuniy "
+                    "hisobot kelmasa, server hozircha Telegram API'ga chiqish "
+                    "ulanishida muammo bor — reklama hech kimga yetmagan bo'lishi mumkin."
         })
 
     if state == "waiting_feedback" and text:
