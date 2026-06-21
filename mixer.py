@@ -120,16 +120,18 @@ async def download_video(url: str, output_path: str):
         print("[*] YouTube — yt-dlp bevosita...")
         return await yt_dlp_download(url, output_path, is_audio=False)
 
-    # Instagram — Cobalt (5+15=20s), muvaffaqiyatsiz bo'lsa yt-dlp (35s)
-    # Jami maksimal: 20+35 = 55s ✓
+    # Instagram — Cobalt odatda 401/403 bilan zudlik bilan rad etadi (ochiq API kaliti
+    # talab qiladi), shu sababli qolgan budjetni yt-dlp'ga beramiz: Instagram CDN
+    # ba'zan sekin javob beradi (datacenter IP throttling), 15s o'rniga 22s socket
+    # timeout bilan 2 marta urinish (44s) ko'proq imkon beradi.
     if "instagram.com" in url:
         print("[*] Instagram — Cobalt sinab ko'rilmoqda...")
         v_url = await get_cobalt_url_custom(url, "https://api.cobalt.tools/api/json", "video")
         if v_url and await download_directly(v_url, output_path, timeout=15):
             print("[+] Instagram Cobalt muvaffaqiyatli!")
             return True
-        print("[!] Cobalt Instagram uchun muvaffaqiyatsiz, yt-dlp...")
-        return await yt_dlp_download(url, output_path, is_audio=False)
+        print("[!] Cobalt Instagram uchun muvaffaqiyatsiz, yt-dlp (kengaytirilgan vaqt)...")
+        return await yt_dlp_download(url, output_path, is_audio=False, timeout=48, socket_timeout=22)
 
     # Boshqa platformalar (Twitter, Pinterest, va h.k.) — Cobalt 1 mirror (20s), keyin yt-dlp (35s)
     # Jami maksimal: 20+35 = 55s ✓
@@ -172,8 +174,8 @@ async def search_and_download_music(query: str, output_path: str):
 
     return await yt_dlp_download(f"ytsearch1:{query}", output_path, is_audio=True)
 
-async def yt_dlp_download(url, output_path, is_audio=False):
-    print(f"[*] yt-dlp: {url[:60]} (Audio={is_audio})")
+async def yt_dlp_download(url, output_path, is_audio=False, timeout=35, socket_timeout=15):
+    print(f"[*] yt-dlp: {url[:60]} (Audio={is_audio}, timeout={timeout})")
     try:
         import yt_dlp
         is_youtube = "youtube.com" in url or "youtu.be" in url
@@ -190,7 +192,7 @@ async def yt_dlp_download(url, output_path, is_audio=False):
             'quiet': True,
             'no_warnings': True,
             'ignoreerrors': False,
-            'socket_timeout': 15,
+            'socket_timeout': socket_timeout,
             'retries': 1,
         }
 
@@ -224,9 +226,9 @@ async def yt_dlp_download(url, output_path, is_audio=False):
 
         loop = asyncio.get_running_loop()
         try:
-            await asyncio.wait_for(loop.run_in_executor(_executor, _run), timeout=35)
+            await asyncio.wait_for(loop.run_in_executor(_executor, _run), timeout=timeout)
         except asyncio.TimeoutError:
-            print("[!] yt-dlp timeout (35s)")
+            print(f"[!] yt-dlp timeout ({timeout}s)")
             return False
 
         if is_audio:
@@ -269,6 +271,10 @@ async def get_cobalt_url_custom(url, api_url, mode):
                 if response.status == 200:
                     res = await response.json()
                     if "url" in res: return res["url"]
+                    print(f"[!] Cobalt {api_url} 200 lekin url yo'q: {str(res)[:200]}")
+                else:
+                    body = (await response.text())[:200]
+                    print(f"[!] Cobalt {api_url} HTTP {response.status}: {body}")
     except Exception as e:
         print(f"[!] Cobalt {api_url} error: {e}")
     return None
