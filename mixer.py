@@ -198,7 +198,7 @@ async def yt_dlp_download(url, output_path, is_audio=False, timeout=35, socket_t
 
         if is_youtube:
             ydl_opts['extractor_args'] = {
-                'youtube': {'player_clients': ['ios', 'android']}
+                'youtube': {'player_clients': ['tv', 'ios', 'android']}
             }
             ydl_opts['http_headers'] = {
                 'User-Agent': 'com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip'
